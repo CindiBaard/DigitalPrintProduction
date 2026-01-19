@@ -13,6 +13,7 @@ from datetime import timedelta, datetime
 
 # --- 1. CONFIGURATION & CONSTANTS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
+df = conn.read(spreadsheet=url, ttl=3600)
 
 # Using the clean URL without extra 'gid' parameters
 df = conn.read(
