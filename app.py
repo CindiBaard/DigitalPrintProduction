@@ -22,8 +22,6 @@ df = conn.read(
     ttl=3600
 )
  
-)
-
 
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 
