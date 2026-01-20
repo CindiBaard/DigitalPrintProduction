@@ -8,21 +8,24 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
 
 # --- 1. CONFIGURATION & CONSTANTS ---
-# Use the absolute cleanest URL (No /edit, no gid)
-URL_LINK = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM"
+# Use the full URL including the /edit part, but remove everything after /edit
+URL_LINK = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/edit"
 SHEET_NAME = "DigitalPrintingQuantities_FULLY_PREPARED"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    df = conn.read(
+    # We use a 0 second TTL to ensure we aren't looking at an old '404' cached page
+    df_main = conn.read(
         spreadsheet=URL_LINK,
         worksheet=SHEET_NAME,
-        ttl="0s"  # ttl="0s" ensures it doesn't try to use a broken cache
+        ttl=0
     )
 except Exception as e:
-    st.error(f"Failed to connect. Error details: {e}")
-    st.stop() # Stops the app here so you don't get follow-up errors
+    st.error("🚨 Google Sheets cannot find your file or tab.")
+    st.write(f"Technical Details: {e}")
+    st.info("💡 QUICK FIX: Ensure your Google Sheet tab at the bottom is named exactly: DigitalPrintingQuantities_FULLY_PREPARED (check for hidden spaces!)")
+    st.stop()
 
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 
