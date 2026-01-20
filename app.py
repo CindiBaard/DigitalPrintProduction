@@ -18,7 +18,9 @@ df = conn.read(spreadsheet=url, ttl=3600)
 # Using the clean URL without extra 'gid' parameters
 df = conn.read(
     spreadsheet="https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/edit?gid=650172488#gid=650172488",
-    worksheet="DigitalPrintingQuantities_FULLY_PREPARED"
+    worksheet="DigitalPrintingQuantities_FULLY_PREPARED",
+    ttl=3600
+)
  
 )
 
