@@ -12,16 +12,17 @@ from datetime import timedelta, datetime
 
 
 # --- 1. CONFIGURATION & CONSTANTS ---
-conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read(spreadsheet=url, ttl=3600)
+# Define the variable first
+URL_LINK = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/edit?gid=650172488#gid=650172488"
 
-# Using the clean URL without extra 'gid' parameters
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Now you can use the variable name safely
 df = conn.read(
-    spreadsheet="https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/edit?gid=650172488#gid=650172488",
+    spreadsheet=URL_LINK, 
     worksheet="DigitalPrintingQuantities_FULLY_PREPARED",
     ttl=3600
 )
- 
 
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 
