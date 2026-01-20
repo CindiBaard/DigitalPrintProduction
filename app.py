@@ -1,27 +1,28 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
 import matplotlib.pyplot as plt
 import calendar
 import ssl
-ssl._create_default_https_context = ssl._create_unverified_context
-import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
 
-
 # --- 1. CONFIGURATION & CONSTANTS ---
-# Cleaned URL: removed the ?gid and #gid parts
-URL_LINK = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/edit"
+# Use the absolute cleanest URL (No /edit, no gid)
+URL_LINK = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM"
+SHEET_NAME = "DigitalPrintingQuantities_FULLY_PREPARED"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-df = conn.read(
-    spreadsheet=URL_LINK,
-    worksheet="DigitalPrintingQuantities_FULLY_PREPARED",
-    ttl=3600
-)
+try:
+    df = conn.read(
+        spreadsheet=URL_LINK,
+        worksheet=SHEET_NAME,
+        ttl="0s"  # ttl="0s" ensures it doesn't try to use a broken cache
+    )
+except Exception as e:
+    st.error(f"Failed to connect. Error details: {e}")
+    st.stop() # Stops the app here so you don't get follow-up errors
 
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 
@@ -38,7 +39,10 @@ ALL_COLUMNS = [
 
 ISSUE_CATEGORIES = ["NoIssue", "Adjust voltage", "Air pipe burst", "Barcode scans", "Clean rollers", "L/Shedding", "UV lamp issues", "Web tension error"]
 
-# --- 2. SESSION STATE INITIALIZATION ---
+# --- 2. INITIALIZE CONNECTION & SESSION STATE ---
+st.set_page_config(layout="wide", page_title=FORM_TITLE)
+conn = st.connection("gsheets", type=GSheetsConnection)
+
 if 'form_version' not in st.session_state:
     st.session_state.form_version = 0
 if 'accumulated_downtime' not in st.session_state:
@@ -48,40 +52,35 @@ if 'timer_start_time' not in st.session_state:
 if 'is_timer_running' not in st.session_state:
     st.session_state.is_timer_running = False
 
-# --- 3. DATA HELPER FUNCTIONS ---
-@st.cache_data
-def load_data(path):
-    if not os.path.exists(path):
-        return None
+# --- 3. DATA HELPERS ---
+def load_gsheets_data():
     try:
-        df = pd.read_csv(path, sep=';', dtype=str)
-        df['ProductionDate'] = pd.to_datetime(df['ProductionDate'], errors='coerce').dt.normalize()
-        df = df.dropna(subset=['ProductionDate'])
-        
-        numeric_cols = ['NoOfJobs', 'DailyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        return df
+        data = conn.read(spreadsheet=URL_LINK, worksheet=SHEET_NAME, ttl="0s") # ttl=0 to always get fresh data
+        if data is not None and not data.empty:
+            data['ProductionDate'] = pd.to_datetime(data['ProductionDate']).dt.normalize()
+            # Ensure numeric columns are actually numbers
+            numeric_cols = ['NoOfJobs', 'DailyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total']
+            for col in numeric_cols:
+                if col in data.columns:
+                    data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+        return data
     except Exception as e:
-        st.error(f"⚠️ Error loading CSV: {e}")
-        return None
+        st.error(f"Error connecting to Google Sheets: {e}")
+        return pd.DataFrame(columns=ALL_COLUMNS)
 
 def calculate_ytd_metrics(selected_date, historical_df):
-    if historical_df is None or historical_df.empty:
+    if historical_df.empty:
         return 0, 0
     sel_dt = pd.to_datetime(selected_date).normalize()
     year_start = pd.to_datetime(f"{sel_dt.year}-01-01")
     ytd_mask = (historical_df['ProductionDate'] >= year_start) & (historical_df['ProductionDate'] < sel_dt)
     return int(historical_df.loc[ytd_mask, 'DailyProductionTotal'].sum()), int(historical_df.loc[ytd_mask, 'NoOfJobs'].sum())
 
-# --- 4. PAGE SETUP ---
-st.set_page_config(layout="wide", page_title=FORM_TITLE)
+# Load data at start
+df_main = load_gsheets_data()
+
+# --- 4. UI: TITLE & TIMER ---
 st.title(FORM_TITLE)
-
-df_main = load_data(FILE_PATH)
-
-# --- 5. DOWNTIME TIMER UI ---
 st.subheader("⏱️ Issue Downtime Tracker")
 t_col1, t_col2, t_col3 = st.columns([1, 1, 2])
 
@@ -107,7 +106,7 @@ total_downtime_val = st.session_state.accumulated_downtime + current_session
 formatted_downtime = str(total_downtime_val).split('.')[0]
 t_col3.metric("Accumulated Downtime Total", formatted_downtime)
 
-# --- 6. ENTRY FORM ---
+# --- 5. ENTRY FORM ---
 st.write("---")
 st.subheader("📊 2026 Production Data Entry")
 v = st.session_state.form_version
@@ -115,9 +114,7 @@ prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"
 target_dt = pd.to_datetime(prod_date).normalize()
 
 prev_ytd_prod, prev_ytd_jobs = calculate_ytd_metrics(prod_date, df_main)
-date_exists = False
-if df_main is not None and not df_main.empty:
-    date_exists = target_dt in df_main['ProductionDate'].values
+date_exists = target_dt in df_main['ProductionDate'].values if not df_main.empty else False
 
 if date_exists:
     st.warning(f"⚠️ A record for {prod_date} already exists.")
@@ -159,119 +156,41 @@ if submitted and not date_exists:
         entry[f'ProductionIssues_{i}'] = selected_issues[i-1] if i <= len(selected_issues) else "NoIssue"
 
     try:
-        new_row = pd.DataFrame([entry])[ALL_COLUMNS]
-        new_row.to_csv(FILE_PATH, mode='a', index=False, sep=';', header=not os.path.exists(FILE_PATH))
+        new_row = pd.DataFrame([entry])
+        # Update logic: append to existing dataframe and write back
+        updated_df = pd.concat([df_main, new_row], ignore_index=True)
+        conn.update(spreadsheet=URL_LINK, worksheet=SHEET_NAME, data=updated_df)
+        
         st.session_state.form_version += 1
         st.session_state.accumulated_downtime = timedelta(0)
-        st.session_state.is_timer_running = False
-        st.cache_data.clear()
-        st.success("✅ 2026 Entry Saved!")
+        st.success("✅ Entry Saved to Google Sheets!")
         st.rerun()
     except Exception as e:
-        st.error(f"❌ Error: {e}")
+        st.error(f"❌ Error Saving: {e}")
 
-# --- 7. ANALYTICS ---
-if df_main is not None and not df_main.empty:
-    df_plot = df_main.copy()
-    df_plot['Year'] = df_plot['ProductionDate'].dt.year
-    df_plot['Month'] = df_plot['ProductionDate'].dt.month
-
-    # --- 7A. LOCKED HISTORICAL COMPARISON (2024 vs 2025) ---
+# --- 6. ANALYTICS ---
+if not df_main.empty:
     st.write("---")
-    st.subheader("📈 Historical Benchmarks (2024 vs 2025)")
-    
-    stats_list = []
-    for year in [2024, 2025]:
-        mask = (df_plot['Year'] == year)
-        stats_list.append({
-            'Year': year,
-            'Production': df_plot.loc[mask, 'DailyProductionTotal'].sum(),
-            'Jobs': df_plot.loc[mask, 'NoOfJobs'].sum()
-        })
-    y_df = pd.DataFrame(stats_list)
-
-    col_graphs, col_table = st.columns([3, 1])
-    with col_graphs:
-        fig_y, (ay1, ay2) = plt.subplots(1, 2, figsize=(12, 4))
-        ay1.bar(y_df['Year'].astype(str), y_df['Production'], color=['#5DADE2', '#EC7063'])
-        ay1.set_title("Total Production")
-        ay2.bar(y_df['Year'].astype(str), y_df['Jobs'], color=['#5DADE2', '#EC7063'])
-        ay2.set_title("Total Jobs")
-        st.pyplot(fig_y)
-
-    with col_table:
-        p24, p25 = y_df.loc[y_df['Year']==2024, 'Production'].iloc[0], y_df.loc[y_df['Year']==2025, 'Production'].iloc[0]
-        j24, j25 = y_df.loc[y_df['Year']==2024, 'Jobs'].iloc[0], y_df.loc[y_df['Year']==2025, 'Jobs'].iloc[0]
-        st.table(pd.DataFrame({
-            "Metric": ["Prod", "Jobs"],
-            "2024": [f"{p24:,.0f}", f"{j24:,.0f}"],
-            "2025": [f"{p25:,.0f}", f"{j25:,.0f}"],
-            "Growth": [f"{((p25-p24)/p24*100):.1f}%" if p24 > 0 else "N/A", f"{((j25-j24)/j24*100):.1f}%" if j24 > 0 else "N/A"]
-        }))
-
-    # --- 7B. UPDATED: 2026 DAILY PRODUCTION TRACKER ---
-    st.write("---")
-    st.subheader("📅 2026 Daily Production Totals")
-    
-    df_2026 = df_plot[df_plot['Year'] == 2026].sort_values('ProductionDate')
+    st.subheader("📈 2026 Performance Tracking")
+    df_2026 = df_main[df_main['ProductionDate'].dt.year == 2026].sort_values('ProductionDate')
     
     if not df_2026.empty:
-        c1, c2, c3 = st.columns(3)
-        total_26 = df_2026['DailyProductionTotal'].sum()
-        avg_26 = df_2026['DailyProductionTotal'].mean()
-        
-        # Projection Logic
-        days_passed = (datetime.now() - datetime(2026, 1, 1)).days + 1
-        projected = (total_26 / days_passed) * 365
-        
-        c1.metric("2026 YTD Total", f"{total_26:,.0f}")
-        c2.metric("2026 Daily Average", f"{avg_26:,.0f}")
-        c3.metric("2026 Projection", f"{projected:,.0f}", delta=f"{projected - p25:,.0f} vs 2025")
-
-        # Daily Bar Chart
         fig_d, ax_d = plt.subplots(figsize=(14, 5))
-        bars = ax_d.bar(df_2026['ProductionDate'].dt.strftime('%d-%b'), df_2026['DailyProductionTotal'], color='#27AE60')
-        ax_d.bar_label(bars, fmt='{:,.0f}', padding=3, fontsize=8, rotation=90)
-        ax_d.set_title("2026 Production by Day")
-        ax_d.set_ylabel("Quantity")
+        ax_d.bar(df_2026['ProductionDate'].dt.strftime('%d-%b'), df_2026['DailyProductionTotal'], color='#27AE60')
         plt.xticks(rotation=45)
         st.pyplot(fig_d)
     else:
-        st.info("No data entries for 2026 yet.")
+        st.info("Waiting for first 2026 entry...")
 
-    # --- 7C. MONTHLY TREND (2024 vs 2025) ---
-    st.write("---")
-    st.subheader("📅 Monthly Comparison (Historical)")
-    m_names = [calendar.month_name[m][:3] for m in range(1, 13)]
-    df_m = df_plot[df_plot['Year'].isin([2024, 2025])].groupby(['Year', 'Month']).agg({'DailyProductionTotal': 'sum', 'NoOfJobs': 'sum'}).reset_index()
-
-    def get_mv(year, col):
-        data = df_m[df_m['Year'] == year]
-        return [data[data['Month'] == m][col].sum() if m in data['Month'].values else 0 for m in range(1, 13)]
-
-    p24_m, p25_m = get_mv(2024, 'DailyProductionTotal'), get_mv(2025, 'DailyProductionTotal')
-    fig_m, ax_m = plt.subplots(figsize=(14, 4))
-    idx = np.arange(12)
-    ax_m.bar(idx - 0.17, p24_m, 0.35, label='2024', color='#5DADE2')
-    ax_m.bar(idx + 0.17, p25_m, 0.35, label='2025', color='#EC7063')
-    ax_m.set_xticks(idx); ax_m.set_xticklabels(m_names); ax_m.legend(); ax_m.set_title("Monthly Production (24 vs 25)")
-    st.pyplot(fig_m)
-
-# --- 8. DELETE TOOL ---
+# --- 7. DELETE TOOL ---
 st.write("---")
 st.subheader("🗑️ Record Management")
-if df_main is not None and not df_main.empty:
+if not df_main.empty:
     with st.expander("Delete an Entry"):
         dates = sorted(df_main['ProductionDate'].dt.date.unique(), reverse=True)
-        to_del = st.selectbox("Select Date to Delete", options=dates, key=f"del_sel_{v}")
+        to_del = st.selectbox("Select Date to Delete", options=dates)
         if st.button("Confirm DELETE", type="primary"):
             updated = df_main[df_main['ProductionDate'].dt.date != to_del]
-            updated.to_csv(FILE_PATH, index=False, sep=';')
-            st.cache_data.clear()
-            st.success(f"Record for {to_del} removed.")
+            conn.update(spreadsheet=URL_LINK, worksheet=SHEET_NAME, data=updated)
+            st.success(f"Deleted {to_del}")
             st.rerun()
-
-# --- 9. VIEW DATA ---
-st.write("---")
-if df_main is not None:
-    st.dataframe(df_main.sort_values(by='ProductionDate', ascending=False).head(10))
