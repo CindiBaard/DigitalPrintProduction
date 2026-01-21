@@ -58,20 +58,21 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_gsheets_data():
     try:
-        # Using ttl=0 to ensure fresh data on every manual refresh/submit
-        data = conn.read(spreadsheet=URL_LINK, worksheet=SHEET_NAME, ttl=0)
+        # We pass the URL specifically into the read function
+        # and ensure no extra parameters are causing the 400 error
+        data = conn.read(
+            spreadsheet=URL_LINK,
+            worksheet=SHEET_NAME,
+            ttl=0
+        )
         if data is not None and not data.empty:
+            # Standardizing date column
             data['ProductionDate'] = pd.to_datetime(data['ProductionDate']).dt.normalize()
-            # Ensure numeric columns are actually numbers
-            numeric_cols = ['NoOfJobs', 'DailyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total']
-            for col in numeric_cols:
-                if col in data.columns:
-                    data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
             return data
         return pd.DataFrame(columns=ALL_COLUMNS)
     except Exception as e:
-        st.error("🚨 Connection Error. Check your internet or Sheet tab name.")
-        st.info(f"Technical details: {e}")
+        st.error(f"🚨 Google Sheets Error: {e}")
+        st.info("Check: Is the Sheet Tab name EXACTLY correct? Is the Sheet Public or Shared?")
         return pd.DataFrame(columns=ALL_COLUMNS)
 
 def calculate_ytd_metrics(selected_date, historical_df):
