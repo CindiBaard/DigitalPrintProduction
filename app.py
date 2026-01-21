@@ -4,18 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
-import os
 import ssl
+import os
 
-# This MUST be at the very top of app.py
-if (not os.environ.get('PYTHONHTTPSVERIFY', '') and 
-    getattr(ssl, '_create_unverified_context', None)):
-    ssl._create_default_https_context = ssl._create_unverified_context
-
-
-# --- 0. SSL FIX ---
-# This resolves the [SSL: CERTIFICATE_VERIFY_FAILED] error by allowing 
-# the app to bypass local certificate validation issues.
+# --- 0. SSL & ENVIRONMENT FIX ---
+# Forces Python to ignore local certificate verification issues
 try:
     _create_unverified_https_context = ssl._create_unverified_context
 except AttributeError:
@@ -24,8 +17,9 @@ else:
     ssl._create_default_https_context = _create_unverified_https_context
 
 # --- 1. CONFIGURATION & CONSTANTS ---
+# Using the clean URL structure to avoid 400 errors
 URL_LINK = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/edit"
-SHEET_NAME = "DigitalPrintingQuantities_FULLY_PREPARED"
+SHEET_NAME = "Data"
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 
 ALL_COLUMNS = [
@@ -58,21 +52,22 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_gsheets_data():
     try:
-        # We pass the URL specifically into the read function
-        # and ensure no extra parameters are causing the 400 error
-        data = conn.read(
-            spreadsheet=URL_LINK,
-            worksheet=SHEET_NAME,
-            ttl=0
-        )
+        # We use the SQL query approach to avoid the "400 Bad Request" error 
+        # that sometimes happens with direct worksheet naming
+        query = f'SELECT * FROM "{SHEET_NAME}"'
+        data = conn.read(spreadsheet=URL_LINK, query=query, ttl=0)
+        
         if data is not None and not data.empty:
-            # Standardizing date column
             data['ProductionDate'] = pd.to_datetime(data['ProductionDate']).dt.normalize()
+            numeric_cols = ['NoOfJobs', 'DailyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total']
+            for col in numeric_cols:
+                if col in data.columns:
+                    data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
             return data
         return pd.DataFrame(columns=ALL_COLUMNS)
     except Exception as e:
-        st.error(f"🚨 Google Sheets Error: {e}")
-        st.info("Check: Is the Sheet Tab name EXACTLY correct? Is the Sheet Public or Shared?")
+        st.error(f"🚨 Connection Failed: {e}")
+        st.info("Check: Is the sheet set to 'Anyone with the link can EDIT'?")
         return pd.DataFrame(columns=ALL_COLUMNS)
 
 def calculate_ytd_metrics(selected_date, historical_df):
@@ -81,11 +76,9 @@ def calculate_ytd_metrics(selected_date, historical_df):
     sel_dt = pd.to_datetime(selected_date).normalize()
     year_start = pd.to_datetime(f"{sel_dt.year}-01-01")
     ytd_mask = (historical_df['ProductionDate'] >= year_start) & (historical_df['ProductionDate'] < sel_dt)
-    ytd_prod = int(historical_df.loc[ytd_mask, 'DailyProductionTotal'].sum())
-    ytd_jobs = int(historical_df.loc[ytd_mask, 'NoOfJobs'].sum())
-    return ytd_prod, ytd_jobs
+    return int(historical_df.loc[ytd_mask, 'DailyProductionTotal'].sum()), int(historical_df.loc[ytd_mask, 'NoOfJobs'].sum())
 
-# Load data once per rerun
+# Load data
 df_main = load_gsheets_data()
 
 # --- 4. UI: TITLE & TIMER ---
@@ -152,21 +145,17 @@ if submitted and not date_exists:
     entry = {col: 0 for col in ALL_COLUMNS}
     entry.update({
         'ProductionDate': prod_date.isoformat(),
-        'NoOfJobs': jobs_today, 
-        'NoOfTrials': trials_today,
+        'NoOfJobs': jobs_today, 'NoOfTrials': trials_today,
         'DailyProductionTotal': prod_today,
-        'YearlyProductionTotal': curr_ytd_prod, 
-        'YTD_Jobs_Total': curr_ytd_jobs,
+        'YearlyProductionTotal': curr_ytd_prod, 'YTD_Jobs_Total': curr_ytd_jobs,
         'CleanMachineAm': str(timedelta(minutes=am_mins)),
         'CleanMachinePm': str(timedelta(minutes=pm_mins)),
         'CleanMachineTotal': str(timedelta(minutes=am_mins+pm_mins)),
         'IssueResolutionTotal': formatted_downtime,
         prod_date.strftime('%A'): 1
     })
-    
     for i in range(1, 11):
-        issue_val = selected_issues[i-1] if i <= len(selected_issues) else "NoIssue"
-        entry[f'ProductionIssues_{i}'] = issue_val
+        entry[f'ProductionIssues_{i}'] = selected_issues[i-1] if i <= len(selected_issues) else "NoIssue"
 
     try:
         new_row = pd.DataFrame([entry])
@@ -191,8 +180,6 @@ if not df_main.empty:
         ax_d.bar(df_2026['ProductionDate'].dt.strftime('%d-%b'), df_2026['DailyProductionTotal'], color='#27AE60')
         plt.xticks(rotation=45)
         st.pyplot(fig_d)
-    else:
-        st.info("Waiting for first 2026 entry...")
 
 # --- 7. DELETE TOOL ---
 st.write("---")
