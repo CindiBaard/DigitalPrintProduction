@@ -4,8 +4,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
-import ssl
 import os
+import ssl
+
+# This MUST be at the very top of app.py
+if (not os.environ.get('PYTHONHTTPSVERIFY', '') and 
+    getattr(ssl, '_create_unverified_context', None)):
+    ssl._create_default_https_context = ssl._create_unverified_context
+
 
 # --- 0. SSL FIX ---
 # This resolves the [SSL: CERTIFICATE_VERIFY_FAILED] error by allowing 
