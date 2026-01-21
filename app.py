@@ -5,10 +5,8 @@ import matplotlib.pyplot as plt
 from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
 import ssl
-import os
 
-# --- 0. SSL & ENVIRONMENT FIX ---
-# Forces Python to ignore local certificate verification issues
+# --- 0. SSL FIX ---
 try:
     _create_unverified_https_context = ssl._create_unverified_context
 except AttributeError:
@@ -16,10 +14,10 @@ except AttributeError:
 else:
     ssl._create_default_https_context = _create_unverified_https_context
 
-# --- 1. CONFIGURATION & CONSTANTS ---
-# Using the clean URL structure to avoid 400 errors
+# --- 1. CONFIGURATION ---
+# Clean URL: ensure no /edit or #gid at the end
 URL_LINK = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/edit"
-SHEET_NAME = "Data"
+SHEET_NAME = "Data" # Matches your renamed tab
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 
 ALL_COLUMNS = [
@@ -35,7 +33,7 @@ ALL_COLUMNS = [
 
 ISSUE_CATEGORIES = ["NoIssue", "Adjust voltage", "Air pipe burst", "Barcode scans", "Clean rollers", "L/Shedding", "UV lamp issues", "Web tension error"]
 
-# --- 2. INITIALIZE PAGE & SESSION STATE ---
+# --- 2. INITIALIZE ---
 st.set_page_config(layout="wide", page_title=FORM_TITLE)
 
 if 'form_version' not in st.session_state:
@@ -47,18 +45,21 @@ if 'timer_start_time' not in st.session_state:
 if 'is_timer_running' not in st.session_state:
     st.session_state.is_timer_running = False
 
-# --- 3. DATA HELPERS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# --- 3. DATA HELPERS ---
 def load_gsheets_data():
     try:
-        # We use the SQL query approach to avoid the "400 Bad Request" error 
-        # that sometimes happens with direct worksheet naming
-        query = f'SELECT * FROM "{SHEET_NAME}"'
-        data = conn.read(spreadsheet=URL_LINK, query=query, ttl=0)
+        # Standardized read method for Public URLs
+        data = conn.read(
+            spreadsheet=URL_LINK, 
+            worksheet=SHEET_NAME, 
+            ttl=0
+        )
         
         if data is not None and not data.empty:
             data['ProductionDate'] = pd.to_datetime(data['ProductionDate']).dt.normalize()
+            # Clean numeric columns
             numeric_cols = ['NoOfJobs', 'DailyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total']
             for col in numeric_cols:
                 if col in data.columns:
@@ -67,21 +68,19 @@ def load_gsheets_data():
         return pd.DataFrame(columns=ALL_COLUMNS)
     except Exception as e:
         st.error(f"🚨 Connection Failed: {e}")
-        st.info("Check: Is the sheet set to 'Anyone with the link can EDIT'?")
+        st.info("💡 Tip: Ensure the tab is named 'Data' and the Sheet is Shared as 'Editor'.")
         return pd.DataFrame(columns=ALL_COLUMNS)
 
 def calculate_ytd_metrics(selected_date, historical_df):
-    if historical_df.empty:
-        return 0, 0
+    if historical_df.empty: return 0, 0
     sel_dt = pd.to_datetime(selected_date).normalize()
     year_start = pd.to_datetime(f"{sel_dt.year}-01-01")
     ytd_mask = (historical_df['ProductionDate'] >= year_start) & (historical_df['ProductionDate'] < sel_dt)
     return int(historical_df.loc[ytd_mask, 'DailyProductionTotal'].sum()), int(historical_df.loc[ytd_mask, 'NoOfJobs'].sum())
 
-# Load data
 df_main = load_gsheets_data()
 
-# --- 4. UI: TITLE & TIMER ---
+# --- 4. TIMER UI ---
 st.title(FORM_TITLE)
 st.subheader("⏱️ Issue Downtime Tracker")
 t_col1, t_col2, t_col3 = st.columns([1, 1, 2])
@@ -180,16 +179,3 @@ if not df_main.empty:
         ax_d.bar(df_2026['ProductionDate'].dt.strftime('%d-%b'), df_2026['DailyProductionTotal'], color='#27AE60')
         plt.xticks(rotation=45)
         st.pyplot(fig_d)
-
-# --- 7. DELETE TOOL ---
-st.write("---")
-st.subheader("🗑️ Record Management")
-if not df_main.empty:
-    with st.expander("Delete an Entry"):
-        dates = sorted(df_main['ProductionDate'].dt.date.unique(), reverse=True)
-        to_del = st.selectbox("Select Date to Delete", options=dates)
-        if st.button("Confirm DELETE", type="primary"):
-            updated = df_main[df_main['ProductionDate'].dt.date != to_del]
-            conn.update(spreadsheet=URL_LINK, worksheet=SHEET_NAME, data=updated)
-            st.success(f"Deleted {to_del}")
-            st.rerun()
