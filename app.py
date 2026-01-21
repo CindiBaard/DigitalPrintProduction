@@ -2,31 +2,24 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import calendar
-import ssl
 from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
+import ssl
+import os
+
+# --- 0. SSL FIX ---
+# This resolves the [SSL: CERTIFICATE_VERIFY_FAILED] error by allowing 
+# the app to bypass local certificate validation issues.
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
 
 # --- 1. CONFIGURATION & CONSTANTS ---
-# Use the full URL including the /edit part, but remove everything after /edit
 URL_LINK = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/edit"
 SHEET_NAME = "DigitalPrintingQuantities_FULLY_PREPARED"
-
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-try:
-    # We use a 0 second TTL to ensure we aren't looking at an old '404' cached page
-    df_main = conn.read(
-        spreadsheet=URL_LINK,
-        worksheet=SHEET_NAME,
-        ttl=0
-    )
-except Exception as e:
-    st.error("🚨 Google Sheets cannot find your file or tab.")
-    st.write(f"Technical Details: {e}")
-    st.info("💡 QUICK FIX: Ensure your Google Sheet tab at the bottom is named exactly: DigitalPrintingQuantities_FULLY_PREPARED (check for hidden spaces!)")
-    st.stop()
-
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 
 ALL_COLUMNS = [
@@ -42,9 +35,8 @@ ALL_COLUMNS = [
 
 ISSUE_CATEGORIES = ["NoIssue", "Adjust voltage", "Air pipe burst", "Barcode scans", "Clean rollers", "L/Shedding", "UV lamp issues", "Web tension error"]
 
-# --- 2. INITIALIZE CONNECTION & SESSION STATE ---
+# --- 2. INITIALIZE PAGE & SESSION STATE ---
 st.set_page_config(layout="wide", page_title=FORM_TITLE)
-conn = st.connection("gsheets", type=GSheetsConnection)
 
 if 'form_version' not in st.session_state:
     st.session_state.form_version = 0
@@ -56,9 +48,12 @@ if 'is_timer_running' not in st.session_state:
     st.session_state.is_timer_running = False
 
 # --- 3. DATA HELPERS ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+
 def load_gsheets_data():
     try:
-        data = conn.read(spreadsheet=URL_LINK, worksheet=SHEET_NAME, ttl="0s") # ttl=0 to always get fresh data
+        # Using ttl=0 to ensure fresh data on every manual refresh/submit
+        data = conn.read(spreadsheet=URL_LINK, worksheet=SHEET_NAME, ttl=0)
         if data is not None and not data.empty:
             data['ProductionDate'] = pd.to_datetime(data['ProductionDate']).dt.normalize()
             # Ensure numeric columns are actually numbers
@@ -66,9 +61,11 @@ def load_gsheets_data():
             for col in numeric_cols:
                 if col in data.columns:
                     data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
-        return data
+            return data
+        return pd.DataFrame(columns=ALL_COLUMNS)
     except Exception as e:
-        st.error(f"Error connecting to Google Sheets: {e}")
+        st.error("🚨 Connection Error. Check your internet or Sheet tab name.")
+        st.info(f"Technical details: {e}")
         return pd.DataFrame(columns=ALL_COLUMNS)
 
 def calculate_ytd_metrics(selected_date, historical_df):
@@ -77,9 +74,11 @@ def calculate_ytd_metrics(selected_date, historical_df):
     sel_dt = pd.to_datetime(selected_date).normalize()
     year_start = pd.to_datetime(f"{sel_dt.year}-01-01")
     ytd_mask = (historical_df['ProductionDate'] >= year_start) & (historical_df['ProductionDate'] < sel_dt)
-    return int(historical_df.loc[ytd_mask, 'DailyProductionTotal'].sum()), int(historical_df.loc[ytd_mask, 'NoOfJobs'].sum())
+    ytd_prod = int(historical_df.loc[ytd_mask, 'DailyProductionTotal'].sum())
+    ytd_jobs = int(historical_df.loc[ytd_mask, 'NoOfJobs'].sum())
+    return ytd_prod, ytd_jobs
 
-# Load data at start
+# Load data once per rerun
 df_main = load_gsheets_data()
 
 # --- 4. UI: TITLE & TIMER ---
@@ -146,21 +145,24 @@ if submitted and not date_exists:
     entry = {col: 0 for col in ALL_COLUMNS}
     entry.update({
         'ProductionDate': prod_date.isoformat(),
-        'NoOfJobs': jobs_today, 'NoOfTrials': trials_today,
+        'NoOfJobs': jobs_today, 
+        'NoOfTrials': trials_today,
         'DailyProductionTotal': prod_today,
-        'YearlyProductionTotal': curr_ytd_prod, 'YTD_Jobs_Total': curr_ytd_jobs,
+        'YearlyProductionTotal': curr_ytd_prod, 
+        'YTD_Jobs_Total': curr_ytd_jobs,
         'CleanMachineAm': str(timedelta(minutes=am_mins)),
         'CleanMachinePm': str(timedelta(minutes=pm_mins)),
         'CleanMachineTotal': str(timedelta(minutes=am_mins+pm_mins)),
         'IssueResolutionTotal': formatted_downtime,
         prod_date.strftime('%A'): 1
     })
+    
     for i in range(1, 11):
-        entry[f'ProductionIssues_{i}'] = selected_issues[i-1] if i <= len(selected_issues) else "NoIssue"
+        issue_val = selected_issues[i-1] if i <= len(selected_issues) else "NoIssue"
+        entry[f'ProductionIssues_{i}'] = issue_val
 
     try:
         new_row = pd.DataFrame([entry])
-        # Update logic: append to existing dataframe and write back
         updated_df = pd.concat([df_main, new_row], ignore_index=True)
         conn.update(spreadsheet=URL_LINK, worksheet=SHEET_NAME, data=updated_df)
         
