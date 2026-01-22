@@ -13,7 +13,8 @@ except:
     pass
 
 # --- 1. CONFIGURATION ---
-# Note: URL and Key are now pulled automatically from secrets.toml
+# Replace this URL with your actual Google Sheet URL if different
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/"
 SHEET_NAME = "Data" 
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 
@@ -44,14 +45,14 @@ if 'timer_start_time' not in st.session_state:
 if 'is_timer_running' not in st.session_state:
     st.session_state.is_timer_running = False
 
-# This connection looks for [connections.gsheets] in secrets.toml automatically
+# Standard connection initialization
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- 3. DATA HELPERS ---
 def load_gsheets_data():
     try:
-        # Uses Service Account from secrets to bypass the 400 Bad Request error
-        data = conn.read(worksheet=SHEET_NAME, ttl=0)
+        # We pass the spreadsheet URL here to fix the "Spreadsheet must be specified" error
+        data = conn.read(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, ttl=0)
         if data is not None and not data.empty:
             data['ProductionDate'] = pd.to_datetime(data['ProductionDate']).dt.normalize()
             numeric_cols = ['NoOfJobs', 'DailyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total']
@@ -62,7 +63,7 @@ def load_gsheets_data():
         return pd.DataFrame(columns=ALL_COLUMNS)
     except Exception as e:
         st.error(f"🚨 Connection Failed: {e}")
-        st.info("Check: Did you put the [connections.gsheets] block in .streamlit/secrets.toml?")
+        st.info("Tip: Ensure your Service Account email is added as an 'Editor' on the Google Sheet.")
         return pd.DataFrame(columns=ALL_COLUMNS)
 
 def calculate_ytd_metrics(selected_date, historical_df):
@@ -109,7 +110,7 @@ with st.form("main_form", clear_on_submit=True):
     m1, m2, m3 = st.columns(3)
     jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key=f"jobs_{v}")
     prod_today = m2.number_input("Production Total", min_value=0, step=100, key=f"prod_{v}")
-    trials_today = m1.number_input("Trials", min_value=0, step=1, key=f"trials_{v}")
+    trials_today = m3.number_input("Trials", min_value=0, step=1, key=f"trials_{v}")
     
     curr_ytd_prod = prev_ytd_prod + prod_today
     curr_ytd_jobs = prev_ytd_jobs + jobs_today
@@ -141,7 +142,8 @@ if submitted and not date_exists:
 
     try:
         updated_df = pd.concat([df_main, pd.DataFrame([entry])], ignore_index=True)
-        conn.update(worksheet=SHEET_NAME, data=updated_df)
+        # We must also provide the spreadsheet URL here for updating
+        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
         st.success("✅ Saved!")
         st.session_state.form_version += 1
         st.rerun()
