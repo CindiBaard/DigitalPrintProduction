@@ -8,7 +8,7 @@ import ssl
 # --- 1. CONFIG & PAGE SETUP ---
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/"
-SHEET_NAME = "Data" 
+SHEET_NAME = "Data"
 
 st.set_page_config(layout="wide", page_title=FORM_TITLE)
 
@@ -90,35 +90,17 @@ st.subheader("📊 Monthly Production Comparison: 2024, 2025 & 2026")
 
 if not df_main.empty and PLOTLY_AVAILABLE:
     df_chart = df_main.copy()
-    
-    # Ensure dates are treated correctly
-    df_chart['ProductionDate'] = pd.to_datetime(df_chart['ProductionDate'])
-    df_chart['Year'] = df_chart['ProductionDate'].dt.year.astype(str) # String for discrete colors
+    df_chart['Year'] = df_chart['ProductionDate'].dt.year.astype(str)
     df_chart['MonthNum'] = df_chart['ProductionDate'].dt.month
     df_chart['Month'] = df_chart['ProductionDate'].dt.strftime('%b')
 
-    # Filter for relevant years
     compare_df = df_chart[df_chart['Year'].isin(['2024', '2025', '2026'])]
     
     if not compare_df.empty:
-        # Aggregate data by Year and Month
         monthly_data = compare_df.groupby(['Year', 'MonthNum', 'Month'])['DailyProductionTotal'].sum().reset_index()
         monthly_data = monthly_data.sort_values('MonthNum')
-
-        fig = px.line(
-            monthly_data, 
-            x='Month', 
-            y='DailyProductionTotal', 
-            color='Year',
-            markers=True,
-            title="Monthly Production Trends",
-            labels={'DailyProductionTotal': 'Total Production', 'Month': 'Month'}
-        )
+        fig = px.line(monthly_data, x='Month', y='DailyProductionTotal', color='Year', markers=True)
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No data available for 2024-2026 yet.")
-else:
-    st.info("Add data to see the production comparison chart.")
 
 # --- 8. TIMER UI ---
 st.write("---")
@@ -167,14 +149,10 @@ with st.form("main_form", clear_on_submit=True):
 
 if submitted and not date_exists:
     try:
-        # 1. Initialize empty row with all columns
         entry = {col: "" for col in ALL_COLUMNS}
-        
-        # 2. Map issues list to individual columns
         issues_to_save = selected_issues if selected_issues else ["NoIssue"]
         issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
 
-        # 3. Update entry with all data
         entry.update({
             'ProductionDate': prod_date.strftime('%Y-%m-%d'),
             'NoOfJobs': jobs_today, 
@@ -191,18 +169,14 @@ if submitted and not date_exists:
         })
         entry.update(issue_dict)
 
-        # 4. Create DataFrame and ensure column order matches Sheet exactly
         new_row_df = pd.DataFrame([entry])[ALL_COLUMNS] 
         updated_df = pd.concat([df_main, new_row_df], ignore_index=True)
-        
-        # 5. Push to Google Sheets
         conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
         
         st.success("✅ Data saved successfully!")
         st.session_state.form_version += 1
         st.session_state.accumulated_downtime = timedelta(0) 
         st.rerun()
-        
     except Exception as e:
         st.error(f"❌ Save Error: {e}")
 
@@ -213,7 +187,7 @@ if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate', ascending=False).head(10), use_container_width=True)
     
     if st.button("🗑️ Delete Last Entry"):
-        # Indentation fixed here
+        # Correctly removing the last record and syncing with GSheets
         updated_df = df_main.iloc[:-1]
         conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
         st.warning("Last row deleted successfully.")
