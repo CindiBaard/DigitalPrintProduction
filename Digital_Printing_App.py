@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px  # This is the correct way to import Plotly
 from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
-import ssl
 
 # --- 1. CONFIG & PAGE SETUP ---
 # These must be at the very top to prevent the "MustBeFirst" error
