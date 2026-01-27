@@ -9,6 +9,7 @@ import ssl
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/"
 SHEET_NAME = "Data"
+ANNUAL_TARGET = 9680000
 
 st.set_page_config(layout="wide", page_title=FORM_TITLE)
 
@@ -73,47 +74,63 @@ def calculate_ytd_metrics(selected_date, historical_df):
     jobs = pd.to_numeric(historical_df.loc[ytd_mask, 'NoOfJobs'], errors='coerce').sum()
     return int(prod), int(jobs)
 
-current_year = datetime.now().year
-ytd_val = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == current_year]['DailyProductionTotal'], errors='coerce').sum() if not df_main.empty else 0
+# Annual Totals for Display
+total_2024 = 0
+total_2025 = 0
+ytd_2026 = 0
 
-# --- 7. UI: HEADER & COMPARATIVE GRAPHS ---
+if not df_main.empty:
+    total_2024 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2024]['DailyProductionTotal'], errors='coerce').sum()
+    total_2025 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2025]['DailyProductionTotal'], errors='coerce').sum()
+    ytd_2026 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['DailyProductionTotal'], errors='coerce').sum()
+
+# --- 7. UI: HEADER & METRICS ---
 st.title(FORM_TITLE)
-st.metric(f"📈 {current_year} Year-to-Date Total", f"{ytd_val:,.0f}")
+
+# Display Annual Metrics
+col1, col2, col3 = st.columns(3)
+col1.metric("📊 2024 Full Year Total", f"{total_2024:,.0f}")
+col2.metric("📊 2025 Full Year Total", f"{total_2025:,.0f}")
+
+# 2026 YTD with Delta relative to Target
+progress = (ytd_2026 / ANNUAL_TARGET) * 100 if ANNUAL_TARGET > 0 else 0
+col3.metric(
+    "📈 2026 Year-to-Date Total", 
+    f"{ytd_2026:,.0f}", 
+    delta=f"Target: {ANNUAL_TARGET:,.0f} ({progress:.1f}%)",
+    delta_color="normal"
+)
 
 st.write("---")
-st.subheader("📊 Comparative Monthly Production (2024 vs 2025 vs 2026)")
+st.subheader("📊 Comparative Monthly Production")
 
 if not df_main.empty and PLOTLY_AVAILABLE:
     df_chart = df_main.copy()
-    # Create year and month helper columns
     df_chart['Year'] = df_chart['ProductionDate_Parsed'].dt.year.astype(str)
     df_chart['MonthNum'] = df_chart['ProductionDate_Parsed'].dt.month
     df_chart['Month'] = df_chart['ProductionDate_Parsed'].dt.strftime('%b')
     
-    # Filter for the three years requested
     compare_df = df_chart[df_chart['Year'].isin(['2024', '2025', '2026'])].copy()
     
     if not compare_df.empty:
-        # Group data for the bar chart
         monthly_data = compare_df.groupby(['Year', 'MonthNum', 'Month'])['DailyProductionTotal'].sum().reset_index()
         monthly_data = monthly_data.sort_values('MonthNum')
         
-        # Create grouped bar chart
         fig_bar = px.bar(
             monthly_data, 
             x='Month', 
             y='DailyProductionTotal', 
             color='Year',
             barmode='group',
-            title="Monthly Production Comparison",
-            labels={'DailyProductionTotal': 'Production Total', 'Month': 'Month'},
-            color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'} # Custom colors for clarity
+            labels={'DailyProductionTotal': 'Production Total'},
+            color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'}
         )
+        # Add target line to the graph
+        monthly_target = ANNUAL_TARGET / 12
+        fig_bar.add_hline(y=monthly_target, line_dash="dot", line_color="white", annotation_text=f"Monthly Avg Target: {monthly_target:,.0f}")
         
         fig_bar.update_layout(xaxis={'categoryorder':'array', 'categoryarray':['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']})
         st.plotly_chart(fig_bar, use_container_width=True)
-    else:
-        st.info("Insufficient data for 2024-2026 comparison.")
 
 # --- 8. TIMER UI ---
 st.write("---")
@@ -195,7 +212,6 @@ if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
     m_col1, m_col2 = st.columns(2)
     
-    # Download Backup
     csv = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore').to_csv(index=False).encode('utf-8')
     m_col1.download_button("📥 Download CSV Backup", data=csv, file_name=f"backup_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv')
     
