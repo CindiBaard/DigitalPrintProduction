@@ -218,8 +218,8 @@ st.subheader("📋 Recent Records")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate', ascending=False).head(10), use_container_width=True)
     
-    if st.button("🗑️ Delete Last Entry"):
-    if not df_main.empty:
+if st.button("🗑️ Delete Last Entry"):
+if not df_main.empty:
         # Remove the last row locally
         updated_df = df_main.iloc[:-1]
         
