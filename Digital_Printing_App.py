@@ -100,7 +100,7 @@ if not df_main.empty and PLOTLY_AVAILABLE:
     # Filter for 2024, 2025, and 2026
     compare_df = df_chart[df_chart['Year'].isin([2024, 2025, 2026])]
     
-    if not compare_df.empty:
+if not compare_df.empty:
         # Aggregate
 
 # --- 8. TIMER UI ---
