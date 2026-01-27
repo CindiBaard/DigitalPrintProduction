@@ -86,25 +86,22 @@ st.title(FORM_TITLE)
 st.metric(f"📈 {current_year} Year-to-Date Total", f"{ytd_val:,.0f}")
 
 st.write("---")
-st.subheader("📊 Monthly Comparison: 2024 vs 2025")
+st.subheader("📊 Monthly Production Comparison: 2024, 2025 & 2026")
 
 if not df_main.empty and PLOTLY_AVAILABLE:
     df_chart = df_main.copy()
+    
+    # Ensure dates are treated correctly
+    df_chart['ProductionDate'] = pd.to_datetime(df_chart['ProductionDate'])
     df_chart['Year'] = df_chart['ProductionDate'].dt.year
     df_chart['Month'] = df_chart['ProductionDate'].dt.strftime('%b')
     df_chart['MonthNum'] = df_chart['ProductionDate'].dt.month
 
-    compare_df = df_chart[df_chart['Year'].isin([2024, 2025])]
+    # Filter for 2024, 2025, and 2026
+    compare_df = df_chart[df_chart['Year'].isin([2024, 2025, 2026])]
+    
     if not compare_df.empty:
-        monthly_data = compare_df.groupby(['Year', 'Month', 'MonthNum'])['DailyProductionTotal'].sum().reset_index()
-        monthly_data = monthly_data.sort_values('MonthNum')
-        fig = px.bar(monthly_data, x='Month', y='DailyProductionTotal', color='Year',
-                     barmode='group', color_discrete_map={2024: '#636EFA', 2025: '#EF553B'})
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No data found for 2024 or 2025 in spreadsheet.")
-elif not PLOTLY_AVAILABLE:
-    st.warning("Plotly not installed. Please check requirements.txt.")
+        # Aggregate
 
 # --- 8. TIMER UI ---
 st.write("---")
