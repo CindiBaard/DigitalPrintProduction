@@ -57,6 +57,8 @@ def load_data():
     try:
         data = conn.read(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, ttl=0)
         if data is not None and not data.empty:
+            # Clean column names to remove trailing spaces
+            data.columns = [c.strip() for c in data.columns]
             data['ProductionDate'] = pd.to_datetime(data['ProductionDate'], errors='coerce')
             numeric_cols = ['NoOfJobs', 'DailyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total']
             for col in numeric_cols:
@@ -86,14 +88,13 @@ st.title(FORM_TITLE)
 st.metric(f"📈 {current_year} Year-to-Date Total", f"{ytd_val:,.0f}")
 
 st.write("---")
-st.subheader("📊 Monthly Production Comparison: 2024, 2025 & 2026")
+st.subheader("📊 Monthly Production Comparison")
 
 if not df_main.empty and PLOTLY_AVAILABLE:
     df_chart = df_main.copy()
     df_chart['Year'] = df_chart['ProductionDate'].dt.year.astype(str)
     df_chart['MonthNum'] = df_chart['ProductionDate'].dt.month
     df_chart['Month'] = df_chart['ProductionDate'].dt.strftime('%b')
-
     compare_df = df_chart[df_chart['Year'].isin(['2024', '2025', '2026'])]
     
     if not compare_df.empty:
@@ -180,15 +181,30 @@ if submitted and not date_exists:
     except Exception as e:
         st.error(f"❌ Save Error: {e}")
 
-# --- 10. MANAGEMENT & DELETE ---
+# --- 10. MANAGEMENT, DOWNLOAD & DELETE ---
 st.write("---")
-st.subheader("📋 Recent Records")
+st.subheader("📋 Data Management")
+
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate', ascending=False).head(10), use_container_width=True)
     
-    if st.button("🗑️ Delete Last Entry"):
-        # Correctly removing the last record and syncing with GSheets
-        updated_df = df_main.iloc[:-1]
-        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
-        st.warning("Last row deleted successfully.")
-        st.rerun()
+    m_col1, m_col2 = st.columns(2)
+    
+    # Download Backup
+    csv = df_main.to_csv(index=False).encode('utf-8')
+    m_col1.download_button(
+        label="📥 Download Data as CSV (Backup)",
+        data=csv,
+        file_name=f"production_data_backup_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime='text/csv',
+    )
+    
+    # Delete Logic with Safety
+    with m_col2.expander("🗑️ Delete Last Entry"):
+        st.warning("This action will remove the most recent entry from the spreadsheet.")
+        confirm_delete = st.checkbox("I understand and want to delete the last row.")
+        if st.button("Confirm Delete", disabled=not confirm_delete):
+            updated_df = df_main.iloc[:-1]
+            conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
+            st.success("Last row deleted. Refreshing...")
+            st.rerun()
