@@ -166,49 +166,43 @@ with st.form("main_form", clear_on_submit=True):
     submitted = st.form_submit_button("Submit Data", disabled=date_exists)
 
 if submitted and not date_exists:
-    entry = {col: "" for col in ALL_COLUMNS}
-    
-    # Ensure selected_issues is never empty
-    issues_to_save = selected_issues if selected_issues else ["NoIssue"]
-
-    entry.update({
-        'ProductionDate': prod_date.strftime('%Y-%m-%d'),
-        'NoOfJobs': jobs_today, 
-        'NoOfTrials': trials_today,
-        'DailyProductionTotal': prod_today,
-        'YearlyProductionTotal': prev_ytd_prod + prod_today, 
-        'YTD_Jobs_Total': prev_ytd_jobs + jobs_today,
-        'CleanMachineAm': f"{am_mins} mins",
-        'CleanMachinePm': f"{pm_mins} mins",
-        'CleanMachineTotal': f"{am_mins + pm_mins} mins",
-        'IssueResolutionTotal': formatted_downtime,
-        'TempDate': prod_date.strftime('%Y-%m-%d'),
-        prod_date.strftime('%A'): 1
-    })
-
-    # Fill Issue columns specifically
-    for i in range(1, 11):
-        col_name = f'ProductionIssues_{i}'
-        # Check if the list has an item for this index, else default to "NoIssue"
-        entry[col_name] = issues_to_save[i-1] if i <= len(issues_to_save) else "NoIssue"
-
-    # CRITICAL: Verify the DataFrame columns match the Sheet columns exactly
-    new_row_df = pd.DataFrame([entry])
-    
-    # Reorder columns to match the existing sheet exactly before uploading
-    new_row_df = new_row_df[ALL_COLUMNS] 
-
-    updated_df = pd.concat([df_main, new_row_df], ignore_index=True)
-    conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
-
     try:
-        new_row_df = pd.DataFrame([entry])
+        # 1. Initialize empty row with all columns
+        entry = {col: "" for col in ALL_COLUMNS}
+        
+        # 2. Map issues list to individual columns
+        issues_to_save = selected_issues if selected_issues else ["NoIssue"]
+        issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
+
+        # 3. Update entry with all data
+        entry.update({
+            'ProductionDate': prod_date.strftime('%Y-%m-%d'),
+            'NoOfJobs': jobs_today, 
+            'NoOfTrials': trials_today,
+            'DailyProductionTotal': prod_today,
+            'YearlyProductionTotal': prev_ytd_prod + prod_today, 
+            'YTD_Jobs_Total': prev_ytd_jobs + jobs_today,
+            'CleanMachineAm': f"{am_mins} mins",
+            'CleanMachinePm': f"{pm_mins} mins",
+            'CleanMachineTotal': f"{am_mins + pm_mins} mins",
+            'IssueResolutionTotal': formatted_downtime,
+            'TempDate': prod_date.strftime('%Y-%m-%d'),
+            prod_date.strftime('%A'): 1
+        })
+        entry.update(issue_dict)
+
+        # 4. Create DataFrame and ensure column order matches Sheet exactly
+        new_row_df = pd.DataFrame([entry])[ALL_COLUMNS] 
         updated_df = pd.concat([df_main, new_row_df], ignore_index=True)
+        
+        # 5. Push to Google Sheets
         conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
+        
         st.success("✅ Data saved successfully!")
         st.session_state.form_version += 1
-        st.session_state.accumulated_downtime = timedelta(0) # Reset timer on success
+        st.session_state.accumulated_downtime = timedelta(0) 
         st.rerun()
+        
     except Exception as e:
         st.error(f"❌ Save Error: {e}")
 
@@ -218,15 +212,9 @@ st.subheader("📋 Recent Records")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate', ascending=False).head(10), use_container_width=True)
     
-if st.button("🗑️ Delete Last Entry"):
-if not df_main.empty:
-        # Remove the last row locally
+    if st.button("🗑️ Delete Last Entry"):
+        # Indentation fixed here
         updated_df = df_main.iloc[:-1]
-        
-        # Overwrite the sheet with the new dataframe
         conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
-        
         st.warning("Last row deleted successfully.")
         st.rerun()
-    else:
-        st.error("No data to delete!")
