@@ -93,15 +93,32 @@ if not df_main.empty and PLOTLY_AVAILABLE:
     
     # Ensure dates are treated correctly
     df_chart['ProductionDate'] = pd.to_datetime(df_chart['ProductionDate'])
-    df_chart['Year'] = df_chart['ProductionDate'].dt.year
-    df_chart['Month'] = df_chart['ProductionDate'].dt.strftime('%b')
+    df_chart['Year'] = df_chart['ProductionDate'].dt.year.astype(str) # String for discrete colors
     df_chart['MonthNum'] = df_chart['ProductionDate'].dt.month
+    df_chart['Month'] = df_chart['ProductionDate'].dt.strftime('%b')
 
-    # Filter for 2024, 2025, and 2026
-    compare_df = df_chart[df_chart['Year'].isin([2024, 2025, 2026])]
+    # Filter for relevant years
+    compare_df = df_chart[df_chart['Year'].isin(['2024', '2025', '2026'])]
     
-if not compare_df.empty:
-        # Aggregate
+    if not compare_df.empty:
+        # Aggregate data by Year and Month
+        monthly_data = compare_df.groupby(['Year', 'MonthNum', 'Month'])['DailyProductionTotal'].sum().reset_index()
+        monthly_data = monthly_data.sort_values('MonthNum')
+
+        fig = px.line(
+            monthly_data, 
+            x='Month', 
+            y='DailyProductionTotal', 
+            color='Year',
+            markers=True,
+            title="Monthly Production Trends",
+            labels={'DailyProductionTotal': 'Total Production', 'Month': 'Month'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No data available for 2024-2026 yet.")
+else:
+    st.info("Add data to see the production comparison chart.")
 
 # --- 8. TIMER UI ---
 st.write("---")
