@@ -39,7 +39,30 @@ ALL_COLUMNS = [
     'TempDate'
 ]
 
-ISSUE_CATEGORIES = ["NoIssue", "Adjust voltage", "Air pipe burst", "Barcode scans", "Clean rollers", "L/Shedding", "UV lamp issues", "Web tension error"]
+ISSUE_CATEGORIES = ['NoIssue', 'Adjust voltage', 'Admin/Meeting', 'Air pipe burst', 'Arrived at work late',
+    'Barcode scans (break into prod to do scan)', 'Centre a/w on web (moved as speed changed)',
+    'Change degassing unit', 'Check multiple jobs for colour', 'Clean Heads am/pm (1 hr 30 min)',
+    'Clean rollers (extensive clean)', 'Corona issues', 
+    'Defective laminate causes infeed height to trigger', 'Fire drill',
+    'Flush heads, Fill_Cleaner, Print, Refill_Ink', 'Flush printer and replace heads',
+    'General: Smudging/puddling etc.', 'Generator (big) no compressed air', 'HMI not responding',
+    'Infeed trigger due to encoder', 'Ink (G2 vs G4): rework colours', 'Ink management system error',
+    'Left work early', 'Lines: 100 black head', 'Lines: 100 cyan head', 'Lines: 100 magenta head',
+    'Lines: 100 yellow head', 'Lines: 200 black head', 'Lines: 200 cyan head', 'Lines: 200 magenta head',
+    'Lines: 200 yellow head', 'Lines: Print incorrect direction + rewind', 'Manifold card out for repair',
+    'Material change', 'Material change ABL White to ABL Silver', 'Material change ABL to PBL', 
+    'Material change PBL to ABL', 'Meeting', 'PUBLIC HOLIDAY', 'Pack trials', 'Planned Maintenance',
+    'Print slowly due to banding', 'Print trial rolls for varnish/foil', 
+    'Printing on hold due to backlog on SAESA', 
+    'Registration issues (profile auto changed in run)', 'Rollers bouncing', 
+    'Set up multiple trials for trial run', 'Software issue relating to heads',
+    'Spring loose next to encoder', 'Stitch print heads', 
+    'TeaAndLunchBreaks_Ashley not a work', 'TeaAndLunchBreaks_Zahyaan not at work',
+    'Training', 'Trial options for Client meeting', 'Trials: 1 hr', 'Trials: 2 hr', 'Trials: 3 hr', 
+    'Trials: 4 hr', 'Trials: 5 hr', 'Trials: 6 hr', 'Trials: 8 hr', 'Trials: 9 hr', 
+    'Troubleshoot issues with yellow print heads', 'UV lamp issues', 
+    'Vertical white, unprinted bands in yellow heads', 'Web tension error (rollers clamping)',
+    'Worked in another day in lieu of Public Holiday',]
 
 # --- 4. SESSION STATE ---
 if 'form_version' not in st.session_state: st.session_state.form_version = 0
