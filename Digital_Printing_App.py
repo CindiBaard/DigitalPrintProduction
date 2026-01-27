@@ -1,19 +1,25 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px # Better for comparative graphs
 from streamlit_gsheets import GSheetsConnection
-from datetime import timedelta, datetime
+from datetime import datetime
 import ssl
 
-# --- 1. CONFIGURATION ---
+# --- 1. CONFIG & PAGE SETUP ---
+# These must be at the very top to prevent the "MustBeFirst" error
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/"
 SHEET_NAME = "Data" 
 
 st.set_page_config(layout="wide", page_title=FORM_TITLE)
 
-# --- 2. DATA HELPERS ---
+# --- 2. OPTIONAL LIBRARIES (Safety Check) ---
+try:
+    import plotly.express as px
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
+# --- 3. DATA LOADING ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
@@ -21,92 +27,89 @@ def load_data():
         df = conn.read(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, ttl=0)
         if df is not None and not df.empty:
             df['ProductionDate'] = pd.to_datetime(df['ProductionDate'], errors='coerce')
-            df['DailyProductionTotal'] = pd.to_numeric(df['DailyProductionTotal'], errors='coerce').fillna(0)
+            for col in ['DailyProductionTotal', 'NoOfJobs']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             return df.dropna(subset=['ProductionDate'])
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.error(f"Connection Error: {e}")
         return pd.DataFrame()
 
 df_main = load_data()
 
-# --- 3. YEAR-TO-DATE (YTD) CALCULATIONS ---
+# --- 4. YTD CALCULATIONS ---
 current_year = datetime.now().year
 ytd_total = 0
 if not df_main.empty:
     ytd_total = df_main[df_main['ProductionDate'].dt.year == current_year]['DailyProductionTotal'].sum()
 
-# --- 4. TOP METRICS BAR ---
+# --- 5. TOP METRICS & COMPARISON GRAPH ---
 st.title(FORM_TITLE)
-m1, m2, m3 = st.columns(3)
-m1.metric(f"Year to Date Total ({current_year})", f"{ytd_total:,.0f}")
-# Add other metrics here as needed
+st.metric(f"📈 {current_year} Year-to-Date Production Total", f"{ytd_total:,.0f}")
 
-# --- 5. COMPARATIVE GRAPHS (2024 vs 2025) ---
 st.write("---")
-st.subheader("📊 Production Comparison: 2024 vs 2025")
+st.subheader("📊 Monthly Comparison: 2024 vs 2025")
 
-if not df_main.empty:
-    # Prepare data for monthly comparison
-    df_history = df_main.copy()
-    df_history['Year'] = df_history['ProductionDate'].dt.year
-    df_history['Month'] = df_history['ProductionDate'].dt.month_name()
-    df_history['MonthNum'] = df_history['ProductionDate'].dt.month
+if not df_main.empty and PLOTLY_AVAILABLE:
+    df_chart = df_main.copy()
+    df_chart['Year'] = df_chart['ProductionDate'].dt.year
+    df_chart['Month'] = df_chart['ProductionDate'].dt.strftime('%b')
+    df_chart['MonthNum'] = df_chart['ProductionDate'].dt.month
 
-    # Filter for 2024 and 2025
-    compare_df = df_history[df_history['Year'].isin([2024, 2025])]
+    compare_df = df_chart[df_chart['Year'].isin([2024, 2025])]
     
     if not compare_df.empty:
-        monthly_comp = compare_df.groupby(['Year', 'Month', 'MonthNum'])['DailyProductionTotal'].sum().reset_index()
-        monthly_comp = monthly_comp.sort_values('MonthNum')
+        monthly_data = compare_df.groupby(['Year', 'Month', 'MonthNum'])['DailyProductionTotal'].sum().reset_index()
+        monthly_data = monthly_data.sort_values('MonthNum')
 
-        fig = px.bar(monthly_comp, x='Month', y='DailyProductionTotal', color='Year',
-                     barmode='group', title="Monthly Production: 2024 vs 2025",
-                     labels={'DailyProductionTotal': 'Total Production'},
-                     color_discrete_map={2024: '#FFA07A', 2025: '#20B2AA'})
+        fig = px.bar(monthly_data, x='Month', y='DailyProductionTotal', color='Year',
+                     barmode='group', 
+                     color_discrete_map={2024: '#636EFA', 2025: '#EF553B'},
+                     labels={'DailyProductionTotal': 'Production Volume'})
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("No data found for 2024 or 2025 to generate comparison.")
+        st.info("No data found for 2024 or 2025 in the 'ProductionDate' column.")
+elif not PLOTLY_AVAILABLE:
+    st.warning("Graphing module (Plotly) not installed. Please check requirements.txt.")
 
 # --- 6. ENTRY FORM ---
 st.write("---")
 with st.form("entry_form", clear_on_submit=True):
-    st.subheader("New Production Entry")
-    f1, f2, f3 = st.columns(3)
-    p_date = f1.date_input("Date", datetime.now())
-    p_jobs = f2.number_input("No of Jobs", min_value=0, step=1)
-    p_prod = f3.number_input("Daily Production Total", min_value=0, step=1)
+    st.subheader("📝 New Daily Entry")
+    col1, col2, col3 = st.columns(3)
+    entry_date = col1.date_input("Production Date", datetime.now())
+    entry_jobs = col2.number_input("Number of Jobs", min_value=0)
+    entry_prod = col3.number_input("Production Total", min_value=0)
     
-    submit = st.form_submit_button("Submit Data")
+    submitted = st.form_submit_button("Add Record to Sheets")
 
-    if submit:
-        # Create new row
-        new_row = pd.DataFrame([{
-            'ProductionDate': p_date.strftime('%Y-%m-%d'),
-            'NoOfJobs': p_jobs,
-            'DailyProductionTotal': p_prod
-        }])
-        
-        # KEY: Combine existing data WITH new row to prevent wiping the sheet
-        updated_df = pd.concat([df_main, new_row], ignore_index=True)
-        
-        try:
-            conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
-            st.success("Data Added Successfully!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Save failed: {e}")
+if submitted:
+    new_entry = pd.DataFrame([{
+        'ProductionDate': entry_date.strftime('%Y-%m-%d'),
+        'NoOfJobs': entry_jobs,
+        'DailyProductionTotal': entry_prod
+    }])
+    
+    # Logic: Append new entry to the end of the existing dataframe
+    final_df = pd.concat([df_main, new_entry], ignore_index=True)
+    
+    try:
+        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
+        st.success("Record Saved!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Failed to save: {e}")
 
-# --- 7. DELETE BUTTON ---
+# --- 7. DELETE & RECENT VIEW ---
 st.write("---")
-st.subheader("Manage Data")
+st.subheader("📋 Recent Entries & Management")
 if not df_main.empty:
-    st.write("Recent Records:")
-    st.dataframe(df_main.tail(5), use_container_width=True)
+    st.dataframe(df_main.sort_values('ProductionDate', ascending=False).head(10), use_container_width=True)
     
     if st.button("🗑️ Delete Last Entry"):
-        # Drop the last row of the current dataframe
-        updated_df = df_main.iloc[:-1] 
-        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
-        st.warning("Last entry removed.")
+        # Logic: Remove the last row and update the whole sheet
+        final_df = df_main.iloc[:-1]
+        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
+        st.warning("Last row deleted from Google Sheets.")
         st.rerun()
