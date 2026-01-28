@@ -19,7 +19,7 @@ try:
 except:
     pass
 
-# --- 2. LIBRARIES ---
+# --- 2. OPTIONAL LIBRARIES ---
 try:
     import plotly.express as px
     PLOTLY_AVAILABLE = True
@@ -40,14 +40,29 @@ ALL_COLUMNS = [
 ]
 
 ISSUE_CATEGORIES = ['NoIssue', 'Adjust voltage', 'Admin/Meeting', 'Air pipe burst', 'Arrived at work late',
-    'Barcode scans', 'Centre a/w on web', 'Change degassing unit', 'Check multiple jobs for colour', 
-    'Clean Heads am/pm', 'Clean rollers', 'Corona issues', 'Defective laminate', 'Fire drill',
-    'Flush heads', 'Flush printer and replace heads', 'General: Smudging/puddling', 
-    'Generator issues', 'HMI not responding', 'Infeed trigger', 'Ink management error',
-    'Left work early', 'Lines issues', 'Maintenance', 'Material change', 'Meeting', 
-    'PUBLIC HOLIDAY', 'Pack trials', 'Registration issues', 'Rollers bouncing', 
-    'Software issue', 'Stitch print heads', 'Training', 'Trials: 1-9 hr', 'UV lamp issues', 
-    'Web tension error', 'Work in lieu of holiday']
+    'Barcode scans (break into prod to do scan)', 'Centre a/w on web (moved as speed changed)',
+    'Change degassing unit', 'Check multiple jobs for colour', 'Clean Heads am/pm (1 hr 30 min)',
+    'Clean rollers (extensive clean)', 'Corona issues', 
+    'Defective laminate causes infeed height to trigger', 'Fire drill',
+    'Flush heads, Fill_Cleaner, Print, Refill_Ink', 'Flush printer and replace heads',
+    'General: Smudging/puddling etc.', 'Generator (big) no compressed air', 'HMI not responding',
+    'Infeed trigger due to encoder', 'Ink (G2 vs G4): rework colours', 'Ink management system error',
+    'Left work early', 'Lines: 100 black head', 'Lines: 100 cyan head', 'Lines: 100 magenta head',
+    'Lines: 100 yellow head', 'Lines: 200 black head', 'Lines: 200 cyan head', 'Lines: 200 magenta head',
+    'Lines: 200 yellow head', 'Lines: Print incorrect direction + rewind', 'Manifold card out for repair',
+    'Material change', 'Material change ABL White to ABL Silver', 'Material change ABL to PBL', 
+    'Material change PBL to ABL', 'Meeting', 'PUBLIC HOLIDAY', 'Pack trials', 'Planned Maintenance',
+    'Print slowly due to banding', 'Print trial rolls for varnish/foil', 
+    'Printing on hold due to backlog on SAESA', 
+    'Registration issues (profile auto changed in run)', 'Rollers bouncing', 
+    'Set up multiple trials for trial run', 'Software issue relating to heads',
+    'Spring loose next to encoder', 'Stitch print heads', 
+    'TeaAndLunchBreaks_Ashley not a work', 'TeaAndLunchBreaks_Zahyaan not at work',
+    'Training', 'Trial options for Client meeting', 'Trials: 1 hr', 'Trials: 2 hr', 'Trials: 3 hr', 
+    'Trials: 4 hr', 'Trials: 5 hr', 'Trials: 6 hr', 'Trials: 8 hr', 'Trials: 9 hr', 
+    'Troubleshoot issues with yellow print heads', 'UV lamp issues', 
+    'Vertical white, unprinted bands in yellow heads', 'Web tension error (rollers clamping)',
+    'Worked in another day in lieu of Public Holiday',]
 
 # --- 4. SESSION STATE ---
 if 'form_version' not in st.session_state: st.session_state.form_version = 0
@@ -74,147 +89,162 @@ df_main = load_data()
 
 # --- 6. CALCULATIONS ---
 def calculate_ytd_metrics(selected_date, historical_df):
-    if historical_df.empty: return 0, 0, 0
+    if historical_df.empty: return 0, 0
     sel_dt = pd.to_datetime(selected_date).normalize()
     year_start = pd.to_datetime(f"{sel_dt.year}-01-01")
     ytd_mask = (historical_df['ProductionDate_Parsed'] >= year_start) & (historical_df['ProductionDate_Parsed'] < sel_dt)
     prod = pd.to_numeric(historical_df.loc[ytd_mask, 'DailyProductionTotal'], errors='coerce').sum()
     jobs = pd.to_numeric(historical_df.loc[ytd_mask, 'NoOfJobs'], errors='coerce').sum()
-    trials = pd.to_numeric(historical_df.loc[ytd_mask, 'NoOfTrials'], errors='coerce').sum()
-    return int(prod), int(jobs), int(trials)
+    return int(prod), int(jobs)
 
-# Metric Preparations
-total_2024 = total_2025 = ytd_2026 = ytd_trials_2026 = 0
+# Annual Totals for Display
+total_2024 = 0
+total_2025 = 0
+ytd_2026 = 0
+
 if not df_main.empty:
     total_2024 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2024]['DailyProductionTotal'], errors='coerce').sum()
     total_2025 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2025]['DailyProductionTotal'], errors='coerce').sum()
     ytd_2026 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['DailyProductionTotal'], errors='coerce').sum()
-    ytd_trials_2026 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['NoOfTrials'], errors='coerce').sum()
 
 # --- 7. UI: HEADER & METRICS ---
 st.title(FORM_TITLE)
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("📊 2024 Total", f"{total_2024:,.0f}")
-col2.metric("📊 2025 Total", f"{total_2025:,.0f}")
+
+# Display Annual Metrics
+col1, col2, col3 = st.columns(3)
+col1.metric("📊 2024 Full Year Total", f"{total_2024:,.0f}")
+col2.metric("📊 2025 Full Year Total", f"{total_2025:,.0f}")
+
+# 2026 YTD with Delta relative to Target
 progress = (ytd_2026 / ANNUAL_TARGET) * 100 if ANNUAL_TARGET > 0 else 0
-col3.metric("📈 2026 YTD Production", f"{ytd_2026:,.0f}", delta=f"{progress:.1f}% Target")
-col4.metric("🧪 2026 YTD Trials", f"{int(ytd_trials_2026)}")
+col3.metric(
+    "📈 2026 Year-to-Date Total", 
+    f"{ytd_2026:,.0f}", 
+    delta=f"Target: {ANNUAL_TARGET:,.0f} ({progress:.1f}%)",
+    delta_color="normal"
+)
 
-# --- 8. ANALYTICS CHARTS (STACKED VERTICALLY) ---
 st.write("---")
+st.subheader("📊 Comparative Monthly Production")
+
 if not df_main.empty and PLOTLY_AVAILABLE:
-    month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-    years = ['2024', '2025', '2026']
-    template = pd.DataFrame([(y, m+1, month_names[m]) for y in years for m in range(12)], 
-                            columns=['Year', 'MonthNum', 'Month'])
-
-    chart_df = df_main.copy()
-    chart_df['Year'] = chart_df['ProductionDate_Parsed'].dt.year.astype(str)
-    chart_df['MonthNum'] = chart_df['ProductionDate_Parsed'].dt.month
-    compare_df = chart_df[chart_df['Year'].isin(years)].copy()
+    df_chart = df_main.copy()
+    df_chart['Year'] = df_chart['ProductionDate_Parsed'].dt.year.astype(str)
+    df_chart['MonthNum'] = df_chart['ProductionDate_Parsed'].dt.month
+    df_chart['Month'] = df_chart['ProductionDate_Parsed'].dt.strftime('%b')
     
-    # Chart 1: Production Comparison (TOP)
-    st.subheader("📊 Monthly Production Comparison")
-    prod_data = compare_df.groupby(['Year', 'MonthNum'])['DailyProductionTotal'].sum().reset_index()
-    full_prod_data = pd.merge(template, prod_data, on=['Year', 'MonthNum'], how='left').fillna(0)
+    compare_df = df_chart[df_chart['Year'].isin(['2024', '2025', '2026'])].copy()
     
-    fig_prod = px.bar(
-        full_prod_data, x='Month', y='DailyProductionTotal', color='Year',
-        barmode='group', height=500, text_auto='.3s',
-        color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'},
-        category_orders={"Month": month_names}
-    )
-    fig_prod.add_hline(y=ANNUAL_TARGET/12, line_dash="dot", line_color="white", annotation_text="Target Pace")
-    fig_prod.update_traces(textposition='outside')
-    st.plotly_chart(fig_prod, use_container_width=True)
-
-    # Chart 2: Trial Comparison (UNDERNEATH)
-    st.subheader("🧪 Monthly Trial Comparison")
-    trial_data = compare_df.groupby(['Year', 'MonthNum'])['NoOfTrials'].sum().reset_index()
-    full_trial_data = pd.merge(template, trial_data, on=['Year', 'MonthNum'], how='left').fillna(0)
-    
-    fig_trial = px.bar(
-        full_trial_data, x='Month', y='NoOfTrials', color='Year',
-        barmode='group', height=400, text_auto=True,
-        color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'},
-        category_orders={"Month": month_names}
-    )
-    fig_trial.update_traces(textposition='outside')
-    st.plotly_chart(fig_trial, use_container_width=True)
-
-# --- 9. TIMER & ENTRY FORM ---
-st.write("---")
-t_col, f_col = st.columns([1, 2])
-
-with t_col:
-    st.subheader("⏱️ Downtime Tracker")
-    if not st.session_state.is_timer_running:
-        if st.button("▶️ Start Timer"):
-            st.session_state.timer_start_time = datetime.now()
-            st.session_state.is_timer_running = True
-            st.rerun()
-    else:
-        if st.button("⏹️ Stop Timer"):
-            st.session_state.accumulated_downtime += (datetime.now() - st.session_state.timer_start_time)
-            st.session_state.is_timer_running = False
-            st.rerun()
-    
-    current_session = (datetime.now() - st.session_state.timer_start_time) if st.session_state.is_timer_running else timedelta(0)
-    total_downtime_val = st.session_state.accumulated_downtime + current_session
-    formatted_downtime = str(total_downtime_val).split('.')[0]
-    st.metric("Total Session Downtime", formatted_downtime)
-
-with f_col:
-    v = st.session_state.form_version
-    prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
-    
-    is_duplicate = False
-    if not df_main.empty:
-        is_duplicate = (df_main['ProductionDate_Parsed'].dt.date == prod_date).any()
-    
-    if is_duplicate:
-        st.warning(f"Note: Entry for {prod_date} already exists.")
-
-    with st.form("main_form", clear_on_submit=True):
-        st.subheader("📝 Daily Entry")
-        m1, m2, m3 = st.columns(3)
-        jobs_today = m1.number_input("Jobs Today", min_value=0, step=1)
-        prod_today = m2.number_input("Production Total", min_value=0, step=100)
-        trials_today = m3.number_input("Trials Today", min_value=0, step=1)
+    if not compare_df.empty:
+        monthly_data = compare_df.groupby(['Year', 'MonthNum', 'Month'])['DailyProductionTotal'].sum().reset_index()
+        monthly_data = monthly_data.sort_values('MonthNum')
         
-        selected_issues = st.multiselect("Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"])
-        submitted = st.form_submit_button("Submit Data", disabled=is_duplicate)
+        fig_bar = px.bar(
+            monthly_data, 
+            x='Month', 
+            y='DailyProductionTotal', 
+            color='Year',
+            barmode='group',
+            labels={'DailyProductionTotal': 'Production Total'},
+            color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'}
+        )
+        # Add target line to the graph
+        monthly_target = ANNUAL_TARGET / 12
+        fig_bar.add_hline(y=monthly_target, line_dash="dot", line_color="white", annotation_text=f"Monthly Avg Target: {monthly_target:,.0f}")
+        
+        fig_bar.update_layout(xaxis={'categoryorder':'array', 'categoryarray':['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']})
+        st.plotly_chart(fig_bar, use_container_width=True)
 
-if submitted and not is_duplicate:
+# --- 8. TIMER UI ---
+st.write("---")
+st.subheader("⏱️ Issue Downtime Tracker")
+t_col1, t_col2, t_col3 = st.columns([1, 1, 2])
+if not st.session_state.is_timer_running:
+    if t_col1.button("▶️ Start Timer"):
+        st.session_state.timer_start_time = datetime.now()
+        st.session_state.is_timer_running = True
+        st.rerun()
+else:
+    if t_col1.button("⏹️ Stop Timer"):
+        st.session_state.accumulated_downtime += (datetime.now() - st.session_state.timer_start_time)
+        st.session_state.is_timer_running = False
+        st.rerun()
+current_session = (datetime.now() - st.session_state.timer_start_time) if st.session_state.is_timer_running else timedelta(0)
+total_downtime_val = st.session_state.accumulated_downtime + current_session
+formatted_downtime = str(total_downtime_val).split('.')[0]
+t_col3.metric("Current Session", formatted_downtime)
+
+# --- 9. ENTRY FORM ---
+st.write("---")
+v = st.session_state.form_version
+prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
+prev_ytd_prod, prev_ytd_jobs = calculate_ytd_metrics(prod_date, df_main)
+
+with st.form("main_form", clear_on_submit=True):
+    st.subheader("📝 New Daily Entry Details")
+    m1, m2, m3 = st.columns(3)
+    jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key=f"jobs_{v}")
+    prod_today = m2.number_input("Production Total", min_value=0, step=100, key=f"prod_{v}")
+    trials_today = m3.number_input("Trials Today", min_value=0, step=1, key=f"trials_{v}")
+    
+    c1, c2 = st.columns(2)
+    am_mins = c1.number_input("AM Clean (Mins)", value=45)
+    pm_mins = c1.number_input("PM Clean (Mins)", value=45)
+    selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"])
+    
+    submitted = st.form_submit_button("Submit Data")
+
+if submitted:
     try:
-        # Preparation for GSHEETS update
         entry = {col: 0 if "Total" in col or "NoOf" in col else "" for col in ALL_COLUMNS}
         issues_to_save = selected_issues if selected_issues else ["NoIssue"]
         issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
+
         entry.update({
             'ProductionDate': prod_date.strftime('%m/%d/%Y'),
-            'NoOfJobs': jobs_today, 'NoOfTrials': trials_today,
+            'NoOfJobs': jobs_today, 
+            'NoOfTrials': trials_today,
             'DailyProductionTotal': prod_today,
             'YearlyProductionTotal': prev_ytd_prod + prod_today, 
             'YTD_Jobs_Total': prev_ytd_jobs + jobs_today,
-            'CleanMachineTotal': "90 mins",
+            'CleanMachineAm': f"{am_mins} mins",
+            'CleanMachinePm': f"{pm_mins} mins",
+            'CleanMachineTotal': f"{am_mins + pm_mins} mins",
             'IssueResolutionTotal': formatted_downtime,
             'TempDate': prod_date.strftime('%Y-%m-%d'),
             prod_date.strftime('%A'): 1
         })
         entry.update(issue_dict)
+
         new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
         final_df = pd.concat([df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore'), new_row_df], ignore_index=True).fillna("")
+        
         conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
-        st.success("✅ Data saved!")
+        st.success("✅ Data saved successfully!")
         st.session_state.form_version += 1
         st.session_state.accumulated_downtime = timedelta(0) 
         st.rerun()
     except Exception as e:
         st.error(f"❌ Save Error: {e}")
 
-# --- 10. HISTORY ---
+# --- 10. MANAGEMENT, DOWNLOAD & DELETE ---
 st.write("---")
-st.subheader("📋 Recent Records")
+st.subheader("📋 Data Management")
+
 if not df_main.empty:
-    st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(5), use_container_width=True)
+    st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
+    m_col1, m_col2 = st.columns(2)
+    
+    csv = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore').to_csv(index=False).encode('utf-8')
+    m_col1.download_button("📥 Download CSV Backup", data=csv, file_name=f"backup_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv')
+    
+    with m_col2.expander("🗑️ Delete Recent Entry"):
+        latest_idx = df_main['ProductionDate_Parsed'].idxmax()
+        latest_date = df_main.loc[latest_idx, 'ProductionDate']
+        st.warning(f"This will delete the entry for: {latest_date}")
+        confirm = st.checkbox("Confirm deletion of this specific row")
+        if st.button("Execute Delete", disabled=not confirm):
+            updated_df = df_main.drop(index=latest_idx).drop(columns=['ProductionDate_Parsed'], errors='ignore').fillna("")
+            conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=updated_df)
+            st.success("Entry removed!")
+            st.rerun()
