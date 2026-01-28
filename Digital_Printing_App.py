@@ -117,7 +117,7 @@ def calculate_ytd_downtime(historical_df):
             continue
     return total_td
 
-# Annual Totals for Display
+# Prep data for metrics
 total_2024, total_2025, ytd_2026, ytd_trials_2026 = 0, 0, 0, 0
 ytd_downtime_2026 = timedelta(0)
 
@@ -143,7 +143,49 @@ total_seconds = int(ytd_downtime_2026.total_seconds())
 hours, minutes = total_seconds // 3600, (total_seconds % 3600) // 60
 col5.metric("⏱️ 2026 YTD Downtime", f"{hours}h {minutes}m")
 
-# --- 8. TIMER UI ---
+# --- 8. CHARTS SECTION ---
+st.write("---")
+if not df_main.empty and PLOTLY_AVAILABLE:
+    chart_df = df_main.copy()
+    chart_df['Year'] = chart_df['ProductionDate_Parsed'].dt.year.astype(str)
+    chart_df['MonthNum'] = chart_df['ProductionDate_Parsed'].dt.month
+    chart_df['Month'] = chart_df['ProductionDate_Parsed'].dt.strftime('%b')
+    
+    # Filter for last 3 years
+    compare_df = chart_df[chart_df['Year'].isin(['2024', '2025', '2026'])].copy()
+    month_order = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+    c_left, c_right = st.columns(2)
+
+    with c_left:
+        st.subheader("📊 Monthly Production Comparison")
+        prod_data = compare_df.groupby(['Year', 'MonthNum', 'Month'])['DailyProductionTotal'].sum().reset_index()
+        prod_data = prod_data.sort_values('MonthNum')
+        
+        fig_prod = px.bar(
+            prod_data, x='Month', y='DailyProductionTotal', color='Year',
+            barmode='group', height=400,
+            color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'}
+        )
+        monthly_target = ANNUAL_TARGET / 12
+        fig_prod.add_hline(y=monthly_target, line_dash="dot", line_color="white", annotation_text="Monthly Target")
+        fig_prod.update_layout(xaxis={'categoryorder':'array', 'categoryarray': month_order})
+        st.plotly_chart(fig_prod, use_container_width=True)
+
+    with c_right:
+        st.subheader("🧪 Monthly Trial Trends")
+        trial_data = compare_df.groupby(['Year', 'MonthNum', 'Month'])['NoOfTrials'].sum().reset_index()
+        trial_data = trial_data.sort_values('MonthNum')
+
+        fig_trial = px.line(
+            trial_data, x='Month', y='NoOfTrials', color='Year',
+            markers=True, height=400,
+            color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'}
+        )
+        fig_trial.update_layout(xaxis={'categoryorder':'array', 'categoryarray': month_order})
+        st.plotly_chart(fig_trial, use_container_width=True)
+
+# --- 9. TIMER UI ---
 st.write("---")
 st.subheader("⏱️ Issue Downtime Tracker")
 t_col1, t_col2, t_col3 = st.columns([1, 1, 2])
@@ -163,18 +205,18 @@ total_downtime_val = st.session_state.accumulated_downtime + current_session
 formatted_downtime = str(total_downtime_val).split('.')[0]
 t_col3.metric("Current Session", formatted_downtime)
 
-# --- 9. ENTRY FORM ---
+# --- 10. ENTRY FORM ---
 st.write("---")
 v = st.session_state.form_version
 prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
 
-# CHECK FOR DUPLICATES
+# DUPLICATE CHECK
 is_duplicate = False
 if not df_main.empty:
     is_duplicate = (df_main['ProductionDate_Parsed'].dt.date == prod_date).any()
 
 if is_duplicate:
-    st.error(f"⚠️ An entry for {prod_date} already exists. Please edit the sheet directly or choose a different date.")
+    st.error(f"⚠️ An entry for {prod_date} already exists. Change the date to continue.")
 
 prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
 
@@ -190,7 +232,6 @@ with st.form("main_form", clear_on_submit=True):
     pm_mins = c1.number_input("PM Clean (Mins)", value=45)
     selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"])
     
-    # Disable button if date is duplicate
     submitted = st.form_submit_button("Submit Data", disabled=is_duplicate)
 
 if submitted and not is_duplicate:
@@ -226,7 +267,7 @@ if submitted and not is_duplicate:
     except Exception as e:
         st.error(f"❌ Save Error: {e}")
 
-# --- 10. MANAGEMENT ---
+# --- 11. MANAGEMENT ---
 st.write("---")
 st.subheader("📋 Recent Data")
 if not df_main.empty:
