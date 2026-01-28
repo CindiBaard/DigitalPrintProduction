@@ -100,7 +100,7 @@ progress = (ytd_2026 / ANNUAL_TARGET) * 100 if ANNUAL_TARGET > 0 else 0
 col3.metric("📈 2026 YTD Production", f"{ytd_2026:,.0f}", delta=f"{progress:.1f}% Target")
 col4.metric("🧪 2026 YTD Trials", f"{int(ytd_trials_2026)}")
 
-# --- 8. ANALYTICS CHARTS (TOP) ---
+# --- 8. ANALYTICS CHARTS (STACKED VERTICALLY) ---
 st.write("---")
 if not df_main.empty and PLOTLY_AVAILABLE:
     month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -113,14 +113,14 @@ if not df_main.empty and PLOTLY_AVAILABLE:
     chart_df['MonthNum'] = chart_df['ProductionDate_Parsed'].dt.month
     compare_df = chart_df[chart_df['Year'].isin(years)].copy()
     
-    # Chart 1: Production Comparison
+    # Chart 1: Production Comparison (TOP)
     st.subheader("📊 Monthly Production Comparison")
     prod_data = compare_df.groupby(['Year', 'MonthNum'])['DailyProductionTotal'].sum().reset_index()
     full_prod_data = pd.merge(template, prod_data, on=['Year', 'MonthNum'], how='left').fillna(0)
     
     fig_prod = px.bar(
         full_prod_data, x='Month', y='DailyProductionTotal', color='Year',
-        barmode='group', height=500, text_auto='.2s',
+        barmode='group', height=500, text_auto='.3s',
         color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'},
         category_orders={"Month": month_names}
     )
@@ -128,7 +128,7 @@ if not df_main.empty and PLOTLY_AVAILABLE:
     fig_prod.update_traces(textposition='outside')
     st.plotly_chart(fig_prod, use_container_width=True)
 
-    # Chart 2: Trial Comparison (Underneath)
+    # Chart 2: Trial Comparison (UNDERNEATH)
     st.subheader("🧪 Monthly Trial Comparison")
     trial_data = compare_df.groupby(['Year', 'MonthNum'])['NoOfTrials'].sum().reset_index()
     full_trial_data = pd.merge(template, trial_data, on=['Year', 'MonthNum'], how='left').fillna(0)
@@ -186,14 +186,35 @@ with f_col:
         submitted = st.form_submit_button("Submit Data", disabled=is_duplicate)
 
 if submitted and not is_duplicate:
-    # Logic to save to Google Sheets (keeping existing structure)
-    st.success("Data recorded!")
-    st.session_state.accumulated_downtime = timedelta(0)
-    st.rerun()
+    try:
+        # Preparation for GSHEETS update
+        entry = {col: 0 if "Total" in col or "NoOf" in col else "" for col in ALL_COLUMNS}
+        issues_to_save = selected_issues if selected_issues else ["NoIssue"]
+        issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
+        entry.update({
+            'ProductionDate': prod_date.strftime('%m/%d/%Y'),
+            'NoOfJobs': jobs_today, 'NoOfTrials': trials_today,
+            'DailyProductionTotal': prod_today,
+            'YearlyProductionTotal': prev_ytd_prod + prod_today, 
+            'YTD_Jobs_Total': prev_ytd_jobs + jobs_today,
+            'CleanMachineTotal': "90 mins",
+            'IssueResolutionTotal': formatted_downtime,
+            'TempDate': prod_date.strftime('%Y-%m-%d'),
+            prod_date.strftime('%A'): 1
+        })
+        entry.update(issue_dict)
+        new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
+        final_df = pd.concat([df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore'), new_row_df], ignore_index=True).fillna("")
+        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
+        st.success("✅ Data saved!")
+        st.session_state.form_version += 1
+        st.session_state.accumulated_downtime = timedelta(0) 
+        st.rerun()
+    except Exception as e:
+        st.error(f"❌ Save Error: {e}")
 
 # --- 10. HISTORY ---
 st.write("---")
 st.subheader("📋 Recent Records")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(5), use_container_width=True)
-Would you like me to increase the size of the text labels on the bars to make them even easier to read?
