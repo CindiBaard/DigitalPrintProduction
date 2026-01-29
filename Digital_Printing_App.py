@@ -161,7 +161,8 @@ if PLOTLY_AVAILABLE and not df_main.empty:
             markers=True
         )
         fig.update_traces(line_color='#0083B8')
-        fig.add_hline(y=ANNUAL_TARGET/365, line_dash="dash", line_color="red", annotation_text="Daily Avg Target")
+        # CHANGED: Daily Avg Target is now set to 38,600
+        fig.add_hline(y=38600, line_dash="dash", line_color="red", annotation_text="Daily Avg Target")
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No 2026 data available yet to display chart.")
