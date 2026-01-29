@@ -4,6 +4,7 @@ import numpy as np
 from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
 import ssl
+import urllib.parse  # Added for WhatsApp URL encoding
 
 # --- 1. CONFIG & PAGE SETUP ---
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
@@ -276,3 +277,41 @@ st.write("---")
 st.subheader("📋 Recent Records (Read Only)")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
+
+# --- 12. EXPORT & SHARE ---
+st.write("---")
+st.subheader("📤 Export & Share Report")
+col_share1, col_share2 = st.columns(2)
+
+with col_share1:
+    whatsapp_phone = st.text_input("Colleague's WhatsApp Number (include country code, e.g., 27...)", placeholder="27123456789")
+    share_message = f"Hi, here is the Production Report for {datetime.now().strftime('%Y-%m-%d')}. Total Production: {ytd_2026:,.0f} meters."
+    
+    # Create WhatsApp link
+    encoded_msg = urllib.parse.quote(share_message)
+    wa_link = f"https://wa.me/{whatsapp_phone}?text={encoded_msg}"
+    
+    if st.button("🖨️ Step 1: Save Page as PDF"):
+        # This triggers the browser's print dialog. User must select 'Save as PDF'.
+        st.components.v1.html("<script>window.print();</script>", height=0)
+        st.info("Please select 'Save as PDF' in the print dialog that just appeared.")
+
+with col_share2:
+    st.write("Click below after saving your PDF to notify your colleague:")
+    if whatsapp_phone:
+        st.markdown(f'''
+            <a href="{wa_link}" target="_blank">
+                <button style="
+                    background-color: #25D366;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    font-weight: bold;">
+                    📲 Step 2: Send WhatsApp Notification
+                </button>
+            </a>
+            ''', unsafe_allow_media_types=False, unsafe_allow_html=True)
+    else:
+        st.warning("Enter a phone number to enable WhatsApp sharing.")
