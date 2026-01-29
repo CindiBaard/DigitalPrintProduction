@@ -7,7 +7,7 @@ import ssl
 
 # --- 1. CONFIG & PAGE SETUP ---
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiKVlTM/"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1RmdsVRdN8Es6d9rAZVt8mUOLQyuz0tnHd8rkiXKVlTM/"
 SHEET_NAME = "Data"
 ANNUAL_TARGET = 9680000
 
@@ -93,61 +93,55 @@ def calculate_ytd_metrics(selected_date, historical_df):
     sel_dt = pd.to_datetime(selected_date).normalize()
     year_start = pd.to_datetime(f"{sel_dt.year}-01-01")
     ytd_mask = (historical_df['ProductionDate_Parsed'] >= year_start) & (historical_df['ProductionDate_Parsed'] < sel_dt)
+    
     prod = pd.to_numeric(historical_df.loc[ytd_mask, 'DailyProductionTotal'], errors='coerce').sum()
     jobs = pd.to_numeric(historical_df.loc[ytd_mask, 'NoOfJobs'], errors='coerce').sum()
     trials = pd.to_numeric(historical_df.loc[ytd_mask, 'NoOfTrials'], errors='coerce').sum()
     return int(prod), int(jobs), int(trials)
 
+def calculate_ytd_downtime(historical_df):
+    if historical_df.empty: return timedelta(0)
+    ytd_mask = historical_df['ProductionDate_Parsed'].dt.year == 2026
+    downtime_series = historical_df.loc[ytd_mask, 'IssueResolutionTotal']
+    total_td = timedelta(0)
+    for val in downtime_series.dropna():
+        try:
+            time_parts = str(val).split(':')
+            if len(time_parts) == 3:
+                h, m, s = map(int, time_parts)
+                total_td += timedelta(hours=h, minutes=m, seconds=s)
+            elif len(time_parts) == 2:
+                m, s = map(int, time_parts)
+                total_td += timedelta(minutes=m, seconds=s)
+        except (ValueError, TypeError):
+            continue
+    return total_td
+
 # Annual Totals for Display
-total_2024 = total_2025 = ytd_2026 = ytd_trials_2026 = 0
+total_2024, total_2025, ytd_2026, ytd_trials_2026 = 0, 0, 0, 0
+ytd_downtime_2026 = timedelta(0)
 
 if not df_main.empty:
     total_2024 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2024]['DailyProductionTotal'], errors='coerce').sum()
     total_2025 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2025]['DailyProductionTotal'], errors='coerce').sum()
     ytd_2026 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['DailyProductionTotal'], errors='coerce').sum()
     ytd_trials_2026 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['NoOfTrials'], errors='coerce').sum()
+    ytd_downtime_2026 = calculate_ytd_downtime(df_main)
 
 # --- 7. UI: HEADER & METRICS ---
 st.title(FORM_TITLE)
 
-# Display Metrics
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("📊 2024 Full Year", f"{total_2024:,.0f}")
-col2.metric("📊 2025 Full Year", f"{total_2025:,.0f}")
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("📊 2024 Total", f"{total_2024:,.0f}")
+col2.metric("📊 2025 Total", f"{total_2025:,.0f}")
 
 progress = (ytd_2026 / ANNUAL_TARGET) * 100 if ANNUAL_TARGET > 0 else 0
-col3.metric("📈 2026 YTD Production", f"{ytd_2026:,.0f}", delta=f"{progress:.1f}% of Target")
+col3.metric("📈 2026 YTD Production", f"{ytd_2026:,.0f}", delta=f"{progress:.1f}% Target")
 col4.metric("🧪 2026 YTD Trials", f"{int(ytd_trials_2026)}")
 
-st.write("---")
-st.subheader("📊 Comparative Monthly Production")
-
-if not df_main.empty and PLOTLY_AVAILABLE:
-    df_chart = df_main.copy()
-    df_chart['Year'] = df_chart['ProductionDate_Parsed'].dt.year.astype(str)
-    df_chart['MonthNum'] = df_chart['ProductionDate_Parsed'].dt.month
-    df_chart['Month'] = df_chart['ProductionDate_Parsed'].dt.strftime('%b')
-    
-    compare_df = df_chart[df_chart['Year'].isin(['2024', '2025', '2026'])].copy()
-    
-    if not compare_df.empty:
-        monthly_data = compare_df.groupby(['Year', 'MonthNum', 'Month'])['DailyProductionTotal'].sum().reset_index()
-        monthly_data = monthly_data.sort_values('MonthNum')
-        
-        fig_bar = px.bar(
-            monthly_data, 
-            x='Month', 
-            y='DailyProductionTotal', 
-            color='Year',
-            barmode='group',
-            labels={'DailyProductionTotal': 'Production Total'},
-            color_discrete_map={'2024': '#636EFA', '2025': '#EF553B', '2026': '#00CC96'}
-        )
-        monthly_target = ANNUAL_TARGET / 12
-        fig_bar.add_hline(y=monthly_target, line_dash="dot", line_color="white", annotation_text=f"Target Pace")
-        
-        fig_bar.update_layout(xaxis={'categoryorder':'array', 'categoryarray':['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']})
-        st.plotly_chart(fig_bar, use_container_width=True)
+total_seconds = int(ytd_downtime_2026.total_seconds())
+hours, minutes = total_seconds // 3600, (total_seconds % 3600) // 60
+col5.metric("⏱️ 2026 YTD Downtime", f"{hours}h {minutes}m")
 
 # --- 8. TIMER UI ---
 st.write("---")
@@ -163,6 +157,7 @@ else:
         st.session_state.accumulated_downtime += (datetime.now() - st.session_state.timer_start_time)
         st.session_state.is_timer_running = False
         st.rerun()
+
 current_session = (datetime.now() - st.session_state.timer_start_time) if st.session_state.is_timer_running else timedelta(0)
 total_downtime_val = st.session_state.accumulated_downtime + current_session
 formatted_downtime = str(total_downtime_val).split('.')[0]
@@ -172,6 +167,15 @@ t_col3.metric("Current Session", formatted_downtime)
 st.write("---")
 v = st.session_state.form_version
 prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
+
+# CHECK FOR DUPLICATES
+is_duplicate = False
+if not df_main.empty:
+    is_duplicate = (df_main['ProductionDate_Parsed'].dt.date == prod_date).any()
+
+if is_duplicate:
+    st.error(f"⚠️ An entry for {prod_date} already exists. Please edit the sheet directly or choose a different date.")
+
 prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
 
 with st.form("main_form", clear_on_submit=True):
@@ -186,9 +190,10 @@ with st.form("main_form", clear_on_submit=True):
     pm_mins = c1.number_input("PM Clean (Mins)", value=45)
     selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"])
     
-    submitted = st.form_submit_button("Submit Data")
+    # Disable button if date is duplicate
+    submitted = st.form_submit_button("Submit Data", disabled=is_duplicate)
 
-if submitted:
+if submitted and not is_duplicate:
     try:
         entry = {col: 0 if "Total" in col or "NoOf" in col else "" for col in ALL_COLUMNS}
         issues_to_save = selected_issues if selected_issues else ["NoIssue"]
@@ -223,7 +228,6 @@ if submitted:
 
 # --- 10. MANAGEMENT ---
 st.write("---")
-st.subheader("📋 Data Management")
-
+st.subheader("📋 Recent Data")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
