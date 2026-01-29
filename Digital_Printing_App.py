@@ -282,23 +282,45 @@ if not df_main.empty:
 # --- 12. EXPORT & SHARE ---
 st.write("---")
 st.subheader("📤 Export & Share Report")
+
+# Preparation for WhatsApp message
+friendly_date = datetime.now().strftime('%d %B %Y')
+whatsapp_phone = st.text_input("Colleague's WhatsApp Number (e.g. 27123456789)", placeholder="27123456789")
+clean_phone = ''.join(filter(str.isdigit, whatsapp_phone))
+
+share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f} meters."
+encoded_msg = urllib.parse.quote(share_message)
+wa_link = f"https://wa.me/{clean_phone}?text={encoded_msg}"
+
 col_share1, col_share2 = st.columns(2)
 
-# Use a text-based date to prevent the phone from mistaking it for a dialable number
-friendly_date = datetime.now().strftime('%d %B %Y')
-
 with col_share1:
-    whatsapp_phone = st.text_input("Colleague's WhatsApp Number (e.g. 27123456789)", placeholder="27123456789")
-    clean_phone = ''.join(filter(str.isdigit, whatsapp_phone))
+    st.write("Step 1: Save Report")
     
-    # Text-based date formatting prevents "Dial" prompts on mobile
-    share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f} meters."
-    encoded_msg = urllib.parse.quote(share_message)
-    wa_link = f"https://wa.me/{clean_phone}?text={encoded_msg}"
+    # We add a slight delay in JS to allow the charts to finish drawing before the print dialog opens
+    print_js = """
+    <script>
+    function printReport() {
+        setTimeout(function() {
+            window.print();
+        }, 1000);
+    }
+    </script>
+    <button onclick="printReport()" style="
+        background-color: #0083B8;
+        color: white;
+        padding: 12px;
+        width: 100%;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;">
+        📄 Create PDF (Wait for it to load)
+    </button>
+    """
+    st.components.v1.html(print_js, height=60)
     
-    if st.button("📄 Step 1: Create PDF on Phone"):
-        st.components.v1.html("<script>window.print();</script>", height=0)
-        st.info("Mobile: Tap 'Share' icon in print preview -> 'Save to Files' or 'Export as PDF'.")
+    st.info("💡 If the PDF is still blank, use your phone's browser menu (the three dots or share icon) and select 'Print' or 'Export to PDF' directly from there.")
 
 with col_share2:
     st.write("Step 2: Send WhatsApp")
@@ -319,4 +341,4 @@ with col_share2:
             </a>
             ''', unsafe_allow_html=True)
     else:
-        st.warning("Enter phone number to enable WhatsApp.")
+        st.warning("Enter phone number.")
