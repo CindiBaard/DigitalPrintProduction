@@ -298,7 +298,43 @@ col_share1, col_share2 = st.columns(2)
 with col_share1:
     st.write("Step 1: Save Report")
     
-    # 1. ORIGINAL JAVASCRIPT PRINT BUTTON
+    # 1. NEW COMPONENT: NATIVE SHARE/IMAGE TRIGGER
+    # This script uses the Web Share API to prompt the mobile device to "share" the current view.
+    # On mobile, this allows the user to take a snapshot/PDF of the specific area and send to WhatsApp.
+    share_js = """
+    <script>
+    async function shareReport() {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'Digital Printing Production Report',
+            text: 'Daily Production Summary: """ + friendly_date + """',
+            url: window.location.href
+          });
+        } catch (err) {
+          console.log("Share failed", err);
+        }
+      } else {
+        alert("Native share not supported on this browser. Please use the 'Create PDF' button.");
+      }
+    }
+    </script>
+    <button onclick="shareReport()" style="
+        background-color: #6c5ce7;
+        color: white;
+        padding: 12px;
+        width: 100%;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-bottom: 10px;">
+        📸 Share Report Snapshot (Mobile)
+    </button>
+    """
+    st.components.v1.html(share_js, height=60)
+
+    # 2. ORIGINAL JAVASCRIPT PRINT BUTTON
     print_js = """
     <script>
     function printReport() {
@@ -322,8 +358,7 @@ with col_share1:
     """
     st.components.v1.html(print_js, height=70)
 
-    # 2. NEW DIRECT PDF DOWNLOAD (Via Google Sheets Export)
-    # This takes the spreadsheet ID and triggers a direct PDF export link
+    # 3. DIRECT PDF DOWNLOAD (Via Google Sheets Export)
     sheet_id = SPREADSHEET_URL.split("/d/")[1].split("/")[0]
     pdf_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=pdf"
     
@@ -338,21 +373,10 @@ with col_share1:
                 font-size: 14px;
                 font-weight: bold;
                 margin-bottom: 20px;">
-                📥 Download Data as PDF (Mobile Friendly)
+                📥 Download Data as PDF (Full List)
             </div>
         </a>
         ''', unsafe_allow_html=True)
-
-    # 3. CSV DOWNLOAD BUTTON
-    if not df_main.empty:
-        csv = df_main.drop(columns=['ProductionDate_Parsed']).to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Data as CSV",
-            data=csv,
-            file_name=f"production_report_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime='text/csv',
-            use_container_width=True
-        )
 
 with col_share2:
     st.write("Step 2: Send WhatsApp")
