@@ -143,6 +143,31 @@ total_seconds = int(ytd_downtime_2026.total_seconds())
 hours, minutes = total_seconds // 3600, (total_seconds % 3600) // 60
 col5.metric("⏱️ 2026 YTD Downtime", f"{hours}h {minutes}m")
 
+# --- NEW: 2026 PRODUCTION CHART ---
+st.write("---")
+if PLOTLY_AVAILABLE and not df_main.empty:
+    # Filter and clean data for 2026 chart
+    chart_df = df_main[df_main['ProductionDate_Parsed'].dt.year == 2026].copy()
+    chart_df['DailyProductionTotal'] = pd.to_numeric(chart_df['DailyProductionTotal'], errors='coerce').fillna(0)
+    chart_df = chart_df.sort_values('ProductionDate_Parsed')
+
+    if not chart_df.empty:
+        fig = px.line(
+            chart_df, 
+            x='ProductionDate_Parsed', 
+            y='DailyProductionTotal',
+            title='2026 Daily Production Performance',
+            labels={'ProductionDate_Parsed': 'Date', 'DailyProductionTotal': 'Meters Produced'},
+            markers=True
+        )
+        fig.update_traces(line_color='#0083B8')
+        fig.add_hline(y=ANNUAL_TARGET/365, line_dash="dash", line_color="red", annotation_text="Daily Avg Target")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No 2026 data available yet to display chart.")
+else:
+    st.info("Chart will appear here once 2026 data is recorded.")
+
 # --- 8. TIMER UI ---
 st.write("---")
 st.subheader("⏱️ Issue Downtime Tracker")
@@ -214,7 +239,6 @@ if submitted and not is_duplicate:
         entry.update(issue_dict)
 
         new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
-        # Prepare final dataframe for upload
         save_df = pd.concat([df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore'), new_row_df], ignore_index=True).fillna("")
         
         conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=save_df)
@@ -230,23 +254,16 @@ st.write("---")
 st.subheader("🛠️ Edit or Delete Entries")
 with st.expander("Click here to modify historical records"):
     st.info("💡 Double-click cells to edit. Select a row and press 'Delete' on your keyboard to remove it.")
-    
-    # We strip the parsed column so it doesn't get uploaded back to Google Sheets
     clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
-    
-    # Initialize Data Editor
     edited_data = st.data_editor(
         clean_df, 
         num_rows="dynamic", 
         use_container_width=True,
         key="data_editor_main"
     )
-    
     save_changes = st.button("💾 Save Changes to Google Sheets")
-    
     if save_changes:
         try:
-            # Update the Google Sheet with the edited dataframe
             conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=edited_data.fillna(""))
             st.success("✅ Spreadsheet updated successfully!")
             st.rerun()
