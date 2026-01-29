@@ -278,7 +278,7 @@ st.subheader("📋 Recent Records (Read Only)")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
 
-Python
+
 # --- 12. EXPORT & SHARE ---
 st.write("---")
 st.subheader("📤 Export & Share Report")
