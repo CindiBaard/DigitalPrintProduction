@@ -19,7 +19,7 @@ try:
 except:
     pass
 
-# --- 2. PLOTLY CHECK ---
+# --- 2. OPTIONAL LIBRARIES ---
 try:
     import plotly.express as px
     PLOTLY_AVAILABLE = True
@@ -79,8 +79,6 @@ def load_data():
         if data is not None and not data.empty:
             data.columns = [c.strip() for c in data.columns]
             data['ProductionDate_Parsed'] = pd.to_datetime(data['ProductionDate'], errors='coerce')
-            # Ensure production values are numeric for plotting
-            data['DailyProductionTotal'] = pd.to_numeric(data['DailyProductionTotal'], errors='coerce').fillna(0)
             return data
         return pd.DataFrame(columns=ALL_COLUMNS)
     except Exception as e:
@@ -96,7 +94,7 @@ def calculate_ytd_metrics(selected_date, historical_df):
     year_start = pd.to_datetime(f"{sel_dt.year}-01-01")
     ytd_mask = (historical_df['ProductionDate_Parsed'] >= year_start) & (historical_df['ProductionDate_Parsed'] < sel_dt)
     
-    prod = historical_df.loc[ytd_mask, 'DailyProductionTotal'].sum()
+    prod = pd.to_numeric(historical_df.loc[ytd_mask, 'DailyProductionTotal'], errors='coerce').sum()
     jobs = pd.to_numeric(historical_df.loc[ytd_mask, 'NoOfJobs'], errors='coerce').sum()
     trials = pd.to_numeric(historical_df.loc[ytd_mask, 'NoOfTrials'], errors='coerce').sum()
     return int(prod), int(jobs), int(trials)
@@ -115,48 +113,38 @@ def calculate_ytd_downtime(historical_df):
             elif len(time_parts) == 2:
                 m, s = map(int, time_parts)
                 total_td += timedelta(minutes=m, seconds=s)
-        except (ValueError, TypeError): continue
+        except (ValueError, TypeError):
+            continue
     return total_td
+
+# Annual Totals
+total_2024, total_2025, ytd_2026, ytd_trials_2026 = 0, 0, 0, 0
+ytd_downtime_2026 = timedelta(0)
+
+if not df_main.empty:
+    total_2024 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2024]['DailyProductionTotal'], errors='coerce').sum()
+    total_2025 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2025]['DailyProductionTotal'], errors='coerce').sum()
+    ytd_2026 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['DailyProductionTotal'], errors='coerce').sum()
+    ytd_trials_2026 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['NoOfTrials'], errors='coerce').sum()
+    ytd_downtime_2026 = calculate_ytd_downtime(df_main)
 
 # --- 7. UI: HEADER & METRICS ---
 st.title(FORM_TITLE)
 
-if not df_main.empty:
-    ytd_2026 = df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['DailyProductionTotal'].sum()
-    ytd_trials_2026 = pd.to_numeric(df_main[df_main['ProductionDate_Parsed'].dt.year == 2026]['NoOfTrials'], errors='coerce').sum()
-    ytd_downtime_2026 = calculate_ytd_downtime(df_main)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    progress = (ytd_2026 / ANNUAL_TARGET) * 100 if ANNUAL_TARGET > 0 else 0
-    col1.metric("📈 2026 YTD Production", f"{ytd_2026:,.0f}")
-    col2.metric("🎯 Target Progress", f"{progress:.1f}%")
-    col3.metric("🧪 YTD Trials", f"{int(ytd_trials_2026)}")
-    
-    td_sec = int(ytd_downtime_2026.total_seconds())
-    col4.metric("⏱️ YTD Downtime", f"{td_sec // 3600}h {(td_sec % 3600) // 60}m")
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("📊 2024 Total", f"{total_2024:,.0f}")
+col2.metric("📊 2025 Total", f"{total_2025:,.0f}")
 
-# --- 8. VISUALIZATION (THE PLOT) ---
-st.write("---")
-st.subheader("📊 Production Trends")
-if PLOTLY_AVAILABLE and not df_main.empty:
-    # Filter for 2026 data and sort by date
-    plot_df = df_main[df_main['ProductionDate_Parsed'].dt.year == 2026].sort_values('ProductionDate_Parsed')
-    
-    if not plot_df.empty:
-        fig = px.line(plot_df, x='ProductionDate_Parsed', y='DailyProductionTotal',
-                      title='Daily Production Total (2026)',
-                      labels={'ProductionDate_Parsed': 'Date', 'DailyProductionTotal': 'Total Printed'},
-                      markers=True, line_shape='spline')
-        fig.update_traces(line_color='#00CC96', marker_size=8)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No data available for 2026 yet to plot.")
-else:
-    st.warning("Plotly not installed or data empty.")
+progress = (ytd_2026 / ANNUAL_TARGET) * 100 if ANNUAL_TARGET > 0 else 0
+col3.metric("📈 2026 YTD Production", f"{ytd_2026:,.0f}", delta=f"{progress:.1f}% Target")
+col4.metric("🧪 2026 YTD Trials", f"{int(ytd_trials_2026)}")
 
-# --- 9. TIMER & ENTRY FORM ---
+total_seconds = int(ytd_downtime_2026.total_seconds())
+hours, minutes = total_seconds // 3600, (total_seconds % 3600) // 60
+col5.metric("⏱️ 2026 YTD Downtime", f"{hours}h {minutes}m")
+
+# --- 8. TIMER UI ---
 st.write("---")
-# (Timer code remains same as your snippet)
 st.subheader("⏱️ Issue Downtime Tracker")
 t_col1, t_col2, t_col3 = st.columns([1, 1, 2])
 if not st.session_state.is_timer_running:
@@ -175,6 +163,7 @@ total_downtime_val = st.session_state.accumulated_downtime + current_session
 formatted_downtime = str(total_downtime_val).split('.')[0]
 t_col3.metric("Current Session", formatted_downtime)
 
+# --- 9. ENTRY FORM ---
 st.write("---")
 v = st.session_state.form_version
 prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
@@ -184,12 +173,12 @@ if not df_main.empty:
     is_duplicate = (df_main['ProductionDate_Parsed'].dt.date == prod_date).any()
 
 if is_duplicate:
-    st.error(f"⚠️ An entry for {prod_date} already exists.")
+    st.error(f"⚠️ An entry for {prod_date} already exists. Use the 'Edit/Delete' section below to modify it.")
 
 prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
 
 with st.form("main_form", clear_on_submit=True):
-    st.subheader("📝 New Daily Entry")
+    st.subheader("📝 New Daily Entry Details")
     m1, m2, m3 = st.columns(3)
     jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key=f"jobs_{v}")
     prod_today = m2.number_input("Production Total", min_value=0, step=100, key=f"prod_{v}")
@@ -210,36 +199,62 @@ if submitted and not is_duplicate:
 
         entry.update({
             'ProductionDate': prod_date.strftime('%m/%d/%Y'),
-            'NoOfJobs': jobs_today, 'NoOfTrials': trials_today,
+            'NoOfJobs': jobs_today, 
+            'NoOfTrials': trials_today,
             'DailyProductionTotal': prod_today,
             'YearlyProductionTotal': prev_ytd_prod + prod_today, 
             'YTD_Jobs_Total': prev_ytd_jobs + jobs_today,
-            'CleanMachineAm': f"{am_mins} mins", 'CleanMachinePm': f"{pm_mins} mins",
+            'CleanMachineAm': f"{am_mins} mins",
+            'CleanMachinePm': f"{pm_mins} mins",
             'CleanMachineTotal': f"{am_mins + pm_mins} mins",
             'IssueResolutionTotal': formatted_downtime,
             'TempDate': prod_date.strftime('%Y-%m-%d'),
             prod_date.strftime('%A'): 1
         })
         entry.update(issue_dict)
-        final_df = pd.concat([df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore'), pd.DataFrame([entry])[ALL_COLUMNS]], ignore_index=True).fillna("")
-        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
-        st.success("✅ Saved!")
+
+        new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
+        # Prepare final dataframe for upload
+        save_df = pd.concat([df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore'), new_row_df], ignore_index=True).fillna("")
+        
+        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=save_df)
+        st.success("✅ Data saved successfully!")
         st.session_state.form_version += 1
         st.session_state.accumulated_downtime = timedelta(0) 
         st.rerun()
-    except Exception as e: st.error(f"❌ Error: {e}")
+    except Exception as e:
+        st.error(f"❌ Save Error: {e}")
 
 # --- 10. EDIT & DELETE MANAGEMENT ---
 st.write("---")
 st.subheader("🛠️ Edit or Delete Entries")
-with st.expander("Modify Historical Records"):
-    if not df_main.empty:
-        clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
-        edited_data = st.data_editor(clean_df, num_rows="dynamic", use_container_width=True, key="main_editor")
-        
-        if st.button("💾 Save All Changes"):
-            try:
-                conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=edited_data.fillna(""))
-                st.success("Spreadsheet updated!")
-                st.rerun()
-            except Exception as e: st.error(f"Update Failed: {e}")
+with st.expander("Click here to modify historical records"):
+    st.info("💡 Double-click cells to edit. Select a row and press 'Delete' on your keyboard to remove it.")
+    
+    # We strip the parsed column so it doesn't get uploaded back to Google Sheets
+    clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
+    
+    # Initialize Data Editor
+    edited_data = st.data_editor(
+        clean_df, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        key="data_editor_main"
+    )
+    
+    save_changes = st.button("💾 Save Changes to Google Sheets")
+    
+    if save_changes:
+        try:
+            # Update the Google Sheet with the edited dataframe
+            conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=edited_data.fillna(""))
+            st.success("✅ Spreadsheet updated successfully!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Update Error: {e}")
+
+# --- 11. RECENT VIEW ---
+st.write("---")
+st.subheader("📋 Recent Records (Read Only)")
+if not df_main.empty:
+    st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
