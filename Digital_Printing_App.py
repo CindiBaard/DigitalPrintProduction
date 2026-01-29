@@ -284,19 +284,21 @@ st.write("---")
 st.subheader("📤 Export & Share Report")
 col_share1, col_share2 = st.columns(2)
 
+# Use a text-based date to prevent the phone from mistaking it for a dialable number
+friendly_date = datetime.now().strftime('%d %B %Y')
+
 with col_share1:
     whatsapp_phone = st.text_input("Colleague's WhatsApp Number (e.g. 27123456789)", placeholder="27123456789")
-    # Clean the phone number (remove + or spaces if the user types them)
     clean_phone = ''.join(filter(str.isdigit, whatsapp_phone))
     
-    share_message = f"Hi, here is the Production Report for {datetime.now().strftime('%Y-%m-%d')}. Total Production: {ytd_2026:,.0f} meters."
+    # Text-based date formatting prevents "Dial" prompts on mobile
+    share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f} meters."
     encoded_msg = urllib.parse.quote(share_message)
     wa_link = f"https://wa.me/{clean_phone}?text={encoded_msg}"
     
     if st.button("📄 Step 1: Create PDF on Phone"):
-        # On mobile, this opens the system print/save dialog
         st.components.v1.html("<script>window.print();</script>", height=0)
-        st.info("Mobile Instructions: Tap the 'Share' icon in the print preview and select 'Save to Files' or 'Export as PDF'.")
+        st.info("Mobile: Tap 'Share' icon in print preview -> 'Save to Files' or 'Export as PDF'.")
 
 with col_share2:
     st.write("Step 2: Send WhatsApp")
@@ -317,4 +319,4 @@ with col_share2:
             </a>
             ''', unsafe_allow_html=True)
     else:
-        st.warning("Enter a phone number to enable WhatsApp.")
+        st.warning("Enter phone number to enable WhatsApp.")
