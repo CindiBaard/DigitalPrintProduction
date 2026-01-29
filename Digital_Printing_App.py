@@ -299,6 +299,7 @@ with col_share1:
 with col_share2:
     st.write("Click below after saving your PDF to notify your colleague:")
     if whatsapp_phone:
+        # Corrected: Removed 'unsafe_allow_media_types' which caused the TypeError
         st.markdown(f'''
             <a href="{wa_link}" target="_blank">
                 <button style="
@@ -312,6 +313,6 @@ with col_share2:
                     📲 Step 2: Send WhatsApp Notification
                 </button>
             </a>
-            ''', unsafe_allow_media_types=False, unsafe_allow_html=True)
+            ''', unsafe_allow_html=True)
     else:
         st.warning("Enter a phone number to enable WhatsApp sharing.")
