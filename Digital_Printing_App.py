@@ -298,7 +298,7 @@ col_share1, col_share2 = st.columns(2)
 with col_share1:
     st.write("Step 1: Save Report")
     
-    # We add a slight delay in JS to allow the charts to finish drawing before the print dialog opens
+    # 1. ORIGINAL JAVASCRIPT PRINT BUTTON
     print_js = """
     <script>
     function printReport() {
@@ -315,13 +315,44 @@ with col_share1:
         border: none;
         border-radius: 8px;
         font-weight: bold;
-        cursor: pointer;">
-        📄 Create PDF (Wait for it to load)
+        cursor: pointer;
+        margin-bottom: 10px;">
+        📄 Create PDF (System Dialog)
     </button>
     """
-    st.components.v1.html(print_js, height=60)
+    st.components.v1.html(print_js, height=70)
+
+    # 2. NEW DIRECT PDF DOWNLOAD (Via Google Sheets Export)
+    # This takes the spreadsheet ID and triggers a direct PDF export link
+    sheet_id = SPREADSHEET_URL.split("/d/")[1].split("/")[0]
+    pdf_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=pdf"
     
-    st.info("💡 If the PDF is still blank, use your phone's browser menu (the three dots or share icon) and select 'Print' or 'Export to PDF' directly from there.")
+    st.markdown(f'''
+        <a href="{pdf_export_url}" target="_blank" style="text-decoration: none;">
+            <div style="
+                background-color: #E74C3C;
+                color: white;
+                padding: 12px;
+                text-align: center;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                margin-bottom: 20px;">
+                📥 Download Data as PDF (Mobile Friendly)
+            </div>
+        </a>
+        ''', unsafe_allow_html=True)
+
+    # 3. CSV DOWNLOAD BUTTON
+    if not df_main.empty:
+        csv = df_main.drop(columns=['ProductionDate_Parsed']).to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Data as CSV",
+            data=csv,
+            file_name=f"production_report_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime='text/csv',
+            use_container_width=True
+        )
 
 with col_share2:
     st.write("Step 2: Send WhatsApp")
