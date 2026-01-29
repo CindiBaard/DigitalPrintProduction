@@ -117,7 +117,7 @@ def calculate_ytd_downtime(historical_df):
             continue
     return total_td
 
-# Annual Totals for Display
+# Annual Totals
 total_2024, total_2025, ytd_2026, ytd_trials_2026 = 0, 0, 0, 0
 ytd_downtime_2026 = timedelta(0)
 
@@ -168,13 +168,12 @@ st.write("---")
 v = st.session_state.form_version
 prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
 
-# CHECK FOR DUPLICATES
 is_duplicate = False
 if not df_main.empty:
     is_duplicate = (df_main['ProductionDate_Parsed'].dt.date == prod_date).any()
 
 if is_duplicate:
-    st.error(f"⚠️ An entry for {prod_date} already exists. Please edit the sheet directly or choose a different date.")
+    st.error(f"⚠️ An entry for {prod_date} already exists. Use the 'Edit/Delete' section below to modify it.")
 
 prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
 
@@ -190,7 +189,6 @@ with st.form("main_form", clear_on_submit=True):
     pm_mins = c1.number_input("PM Clean (Mins)", value=45)
     selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"])
     
-    # Disable button if date is duplicate
     submitted = st.form_submit_button("Submit Data", disabled=is_duplicate)
 
 if submitted and not is_duplicate:
@@ -216,9 +214,10 @@ if submitted and not is_duplicate:
         entry.update(issue_dict)
 
         new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
-        final_df = pd.concat([df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore'), new_row_df], ignore_index=True).fillna("")
+        # Prepare final dataframe for upload
+        save_df = pd.concat([df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore'), new_row_df], ignore_index=True).fillna("")
         
-        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
+        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=save_df)
         st.success("✅ Data saved successfully!")
         st.session_state.form_version += 1
         st.session_state.accumulated_downtime = timedelta(0) 
@@ -226,8 +225,36 @@ if submitted and not is_duplicate:
     except Exception as e:
         st.error(f"❌ Save Error: {e}")
 
-# --- 10. MANAGEMENT ---
+# --- 10. EDIT & DELETE MANAGEMENT ---
 st.write("---")
-st.subheader("📋 Recent Data")
+st.subheader("🛠️ Edit or Delete Entries")
+with st.expander("Click here to modify historical records"):
+    st.info("💡 Double-click cells to edit. Select a row and press 'Delete' on your keyboard to remove it.")
+    
+    # We strip the parsed column so it doesn't get uploaded back to Google Sheets
+    clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
+    
+    # Initialize Data Editor
+    edited_data = st.data_editor(
+        clean_df, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        key="data_editor_main"
+    )
+    
+    save_changes = st.button("💾 Save Changes to Google Sheets")
+    
+    if save_changes:
+        try:
+            # Update the Google Sheet with the edited dataframe
+            conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=edited_data.fillna(""))
+            st.success("✅ Spreadsheet updated successfully!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Update Error: {e}")
+
+# --- 11. RECENT VIEW ---
+st.write("---")
+st.subheader("📋 Recent Records (Read Only)")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
