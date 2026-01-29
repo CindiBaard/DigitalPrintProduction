@@ -284,35 +284,36 @@ st.subheader("📤 Export & Share Report")
 col_share1, col_share2 = st.columns(2)
 
 with col_share1:
-    whatsapp_phone = st.text_input("Colleague's WhatsApp Number (include country code, e.g., 27...)", placeholder="27123456789")
+    whatsapp_phone = st.text_input("Colleague's WhatsApp Number (e.g. 27123456789)", placeholder="27123456789")
+    # Clean the phone number (remove + or spaces if the user types them)
+    clean_phone = ''.join(filter(str.isdigit, whatsapp_phone))
+    
     share_message = f"Hi, here is the Production Report for {datetime.now().strftime('%Y-%m-%d')}. Total Production: {ytd_2026:,.0f} meters."
-    
-    # Create WhatsApp link
     encoded_msg = urllib.parse.quote(share_message)
-    wa_link = f"https://wa.me/{whatsapp_phone}?text={encoded_msg}"
+    wa_link = f"https://wa.me/{clean_phone}?text={encoded_msg}"
     
-    if st.button("🖨️ Step 1: Save Page as PDF"):
-        # This triggers the browser's print dialog. User must select 'Save as PDF'.
+    if st.button("📄 Step 1: Create PDF on Phone"):
+        # On mobile, this opens the system print/save dialog
         st.components.v1.html("<script>window.print();</script>", height=0)
-        st.info("Please select 'Save as PDF' in the print dialog that just appeared.")
+        st.info("Mobile Instructions: Tap the 'Share' icon in the print preview and select 'Save to Files' or 'Export as PDF'.")
 
 with col_share2:
-    st.write("Click below after saving your PDF to notify your colleague:")
-    if whatsapp_phone:
-        # Corrected: Removed 'unsafe_allow_media_types' which caused the TypeError
+    st.write("Step 2: Send WhatsApp")
+    if clean_phone:
         st.markdown(f'''
-            <a href="{wa_link}" target="_blank">
-                <button style="
+            <a href="{wa_link}" target="_blank" style="text-decoration: none;">
+                <div style="
                     background-color: #25D366;
                     color: white;
-                    padding: 10px 20px;
-                    border: none;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    font-weight: bold;">
-                    📲 Step 2: Send WhatsApp Notification
-                </button>
+                    padding: 12px;
+                    text-align: center;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+                    📲 Send WhatsApp Message
+                </div>
             </a>
             ''', unsafe_allow_html=True)
     else:
-        st.warning("Enter a phone number to enable WhatsApp sharing.")
+        st.warning("Enter a phone number to enable WhatsApp.")
