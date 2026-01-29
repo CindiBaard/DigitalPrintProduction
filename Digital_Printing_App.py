@@ -146,7 +146,6 @@ col5.metric("⏱️ 2026 YTD Downtime", f"{hours}h {minutes}m")
 # --- NEW: 2026 PRODUCTION CHART ---
 st.write("---")
 if PLOTLY_AVAILABLE and not df_main.empty:
-    # Filter and clean data for 2026 chart
     chart_df = df_main[df_main['ProductionDate_Parsed'].dt.year == 2026].copy()
     chart_df['DailyProductionTotal'] = pd.to_numeric(chart_df['DailyProductionTotal'], errors='coerce').fillna(0)
     chart_df = chart_df.sort_values('ProductionDate_Parsed')
@@ -193,6 +192,7 @@ st.write("---")
 v = st.session_state.form_version
 prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
 
+# CHECK FOR DUPLICATES
 is_duplicate = False
 if not df_main.empty:
     is_duplicate = (df_main['ProductionDate_Parsed'].dt.date == prod_date).any()
@@ -214,6 +214,7 @@ with st.form("main_form", clear_on_submit=True):
     pm_mins = c1.number_input("PM Clean (Mins)", value=45)
     selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"])
     
+    # Disable button if duplicate exists
     submitted = st.form_submit_button("Submit Data", disabled=is_duplicate)
 
 if submitted and not is_duplicate:
