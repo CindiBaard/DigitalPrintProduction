@@ -255,23 +255,38 @@ if submitted and not is_duplicate:
 # --- 10. EDIT & DELETE MANAGEMENT ---
 st.write("---")
 st.subheader("🛠️ Edit or Delete Entries")
-with st.expander("Click here to modify historical records"):
-    st.info("💡 Double-click cells to edit. Select a row and press 'Delete' on your keyboard to remove it.")
-    clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
-    edited_data = st.data_editor(
-        clean_df, 
-        num_rows="dynamic", 
-        use_container_width=True,
-        key="data_editor_main"
-    )
-    save_changes = st.button("💾 Save Changes to Google Sheets")
-    if save_changes:
-        try:
-            conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=edited_data.fillna(""))
-            st.success("✅ Spreadsheet updated successfully!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Update Error: {e}")
+with st.expander("Click here to modify recent records"):
+    st.info("💡 You can only edit records from **2026 onwards**. Historical records (2024-2025) are locked.")
+    
+    # 1. Filter data: Separate locked historical data from editable current data
+    if not df_main.empty:
+        historical_mask = df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])
+        
+        locked_data = df_main[historical_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
+        editable_data = df_main[~historical_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
+        
+        # 2. Show only editable data in the editor
+        edited_recent_data = st.data_editor(
+            editable_data, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            key="data_editor_recent"
+        )
+        
+        save_changes = st.button("💾 Save Changes to Google Sheets")
+        
+        if save_changes:
+            try:
+                # 3. Combine locked historical data with the newly edited recent data
+                final_combined_df = pd.concat([locked_data, edited_recent_data], ignore_index=True).fillna("")
+                
+                conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_combined_df)
+                st.success("✅ Recent records updated! Historical data remained protected.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Update Error: {e}")
+    else:
+        st.warning("No data found to edit.")
 
 # --- 11. RECENT VIEW ---
 st.write("---")
