@@ -254,39 +254,43 @@ if submitted and not is_duplicate:
 
 # --- 10. EDIT & DELETE MANAGEMENT ---
 st.write("---")
-st.subheader("🛠️ Edit or Delete Entries")
-with st.expander("Click here to modify recent records"):
-    st.info("💡 You can only edit records from **2026 onwards**. Historical records (2024-2025) are locked.")
-    
-    # 1. Filter data: Separate locked historical data from editable current data
+st.subheader("🛠️ Record Management")
+
+# A. READ-ONLY HISTORICAL ARCHIVE
+with st.expander("📂 View Historical Records (2024-2025) - Read Only"):
+    st.warning("🔒 Records from 2024 and 2025 are archived and cannot be modified.")
     if not df_main.empty:
-        historical_mask = df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])
+        hist_df = df_main[df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])].copy()
+        st.dataframe(hist_df.drop(columns=['ProductionDate_Parsed'], errors='ignore'), use_container_width=True)
+
+# B. EDITABLE RECENT RECORDS
+with st.expander("📝 Edit 2026 Records"):
+    st.info("💡 Only 2026 entries are displayed here for editing.")
+    if not df_main.empty:
+        # Separate the data
+        hist_mask = df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])
+        locked_part = df_main[hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
+        editable_part = df_main[~hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
         
-        locked_data = df_main[historical_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
-        editable_data = df_main[~historical_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
-        
-        # 2. Show only editable data in the editor
-        edited_recent_data = st.data_editor(
-            editable_data, 
+        # Data Editor for 2026 only
+        edited_recent = st.data_editor(
+            editable_part, 
             num_rows="dynamic", 
             use_container_width=True,
-            key="data_editor_recent"
+            key="editor_2026"
         )
         
-        save_changes = st.button("💾 Save Changes to Google Sheets")
-        
-        if save_changes:
+        if st.button("💾 Save 2026 Changes"):
             try:
-                # 3. Combine locked historical data with the newly edited recent data
-                final_combined_df = pd.concat([locked_data, edited_recent_data], ignore_index=True).fillna("")
-                
-                conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_combined_df)
-                st.success("✅ Recent records updated! Historical data remained protected.")
+                # Re-combine locked history with edited 2026 data
+                final_df = pd.concat([locked_part, edited_recent], ignore_index=True).fillna("")
+                conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
+                st.success("✅ 2026 records updated successfully!")
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ Update Error: {e}")
     else:
-        st.warning("No data found to edit.")
+        st.info("No records available to edit.")
 
 # --- 11. RECENT VIEW ---
 st.write("---")
