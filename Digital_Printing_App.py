@@ -308,7 +308,9 @@ friendly_date = datetime.now().strftime('%d %B %Y')
 whatsapp_phone = st.text_input("Colleague's WhatsApp Number (e.g. 27123456789)", placeholder="27123456789")
 clean_phone = ''.join(filter(str.isdigit, whatsapp_phone))
 
-share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f} meters."
+# UPDATE THIS LINE: Removed 'meters' and ensured comma formatting for the number
+share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f}"
+
 encoded_msg = urllib.parse.quote(share_message)
 wa_link = f"https://wa.me/{clean_phone}?text={encoded_msg}"
 
