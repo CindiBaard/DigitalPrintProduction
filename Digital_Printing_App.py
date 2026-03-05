@@ -357,7 +357,7 @@ col_print1, col_print2 = st.columns(2)
 with col_print1:
     st.markdown("### 📊 Production")
     st.write(f"**Date:** {prod_date.strftime('%d %B %Y')}")
-    st.write(f"**Daily Production Total:** {disp_prod:,.0f} meters")
+    st.write(f"**Daily Production Total:** {disp_prod:,.0f}")
     st.write(f"**Jobs Completed:** {disp_jobs}")
     st.write(f"**Trials Completed:** {disp_trials}")
 
