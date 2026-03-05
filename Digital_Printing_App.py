@@ -161,7 +161,6 @@ if PLOTLY_AVAILABLE and not df_main.empty:
             markers=True
         )
         fig.update_traces(line_color='#0083B8')
-        # CHANGED: Daily Avg Target is now set to 38,600
         fig.add_hline(y=38600, line_dash="dash", line_color="red", annotation_text="Daily Avg Target")
         st.plotly_chart(fig, use_container_width=True)
     else:
@@ -204,19 +203,19 @@ if is_duplicate:
 
 prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
 
+# Form variables now defined OUTSIDE the submit logic to be accessible by the summary
 with st.form("main_form", clear_on_submit=True):
     st.subheader("📝 New Daily Entry Details")
     m1, m2, m3 = st.columns(3)
-    jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key=f"jobs_{v}")
-    prod_today = m2.number_input("Production Total", min_value=0, step=100, key=f"prod_{v}")
-    trials_today = m3.number_input("Trials Today", min_value=0, step=1, key=f"trials_{v}")
+    jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key=f"jobs_input_{v}")
+    prod_today = m2.number_input("Production Total", min_value=0, step=100, key=f"prod_input_{v}")
+    trials_today = m3.number_input("Trials Today", min_value=0, step=1, key=f"trials_input_{v}")
     
     c1, c2 = st.columns(2)
-    am_mins = c1.number_input("AM Clean (Mins)", value=45)
-    pm_mins = c1.number_input("PM Clean (Mins)", value=45)
-    selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"])
+    am_mins = c1.number_input("AM Clean (Mins)", value=45, key=f"am_clean_{v}")
+    pm_mins = c1.number_input("PM Clean (Mins)", value=45, key=f"pm_clean_{v}")
+    selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"], key=f"issues_input_{v}")
     
-    # Disable button if duplicate exists
     submitted = st.form_submit_button("Submit Data", disabled=is_duplicate)
 
 if submitted and not is_duplicate:
@@ -256,23 +255,19 @@ if submitted and not is_duplicate:
 st.write("---")
 st.subheader("🛠️ Record Management")
 
-# A. READ-ONLY HISTORICAL ARCHIVE
 with st.expander("📂 View Historical Records (2024-2025) - Read Only"):
     st.warning("🔒 Records from 2024 and 2025 are archived and cannot be modified.")
     if not df_main.empty:
         hist_df = df_main[df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])].copy()
         st.dataframe(hist_df.drop(columns=['ProductionDate_Parsed'], errors='ignore'), use_container_width=True)
 
-# B. EDITABLE RECENT RECORDS
 with st.expander("📝 Edit 2026 Records"):
     st.info("💡 Only 2026 entries are displayed here for editing.")
     if not df_main.empty:
-        # Separate the data
         hist_mask = df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])
         locked_part = df_main[hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
         editable_part = df_main[~hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
         
-        # Data Editor for 2026 only
         edited_recent = st.data_editor(
             editable_part, 
             num_rows="dynamic", 
@@ -282,7 +277,6 @@ with st.expander("📝 Edit 2026 Records"):
         
         if st.button("💾 Save 2026 Changes"):
             try:
-                # Re-combine locked history with edited 2026 data
                 final_df = pd.concat([locked_part, edited_recent], ignore_index=True).fillna("")
                 conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
                 st.success("✅ 2026 records updated successfully!")
@@ -298,148 +292,62 @@ st.subheader("📋 Recent Records (Read Only)")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
 
-
 # --- 12. EXPORT & SHARE ---
 st.write("---")
 st.subheader("📤 Export & Share Report")
 
-# Preparation for WhatsApp message
 friendly_date = datetime.now().strftime('%d %B %Y')
 whatsapp_phone = st.text_input("Colleague's WhatsApp Number (e.g. 27123456789)", placeholder="27123456789")
 clean_phone = ''.join(filter(str.isdigit, whatsapp_phone))
-
-# UPDATE THIS LINE: Removed 'meters' and ensured comma formatting for the number
 share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f}"
-
 encoded_msg = urllib.parse.quote(share_message)
 wa_link = f"https://wa.me/{clean_phone}?text={encoded_msg}"
 
 col_share1, col_share2 = st.columns(2)
-
 with col_share1:
     st.write("Step 1: Save Report")
-    
-    # 1. NEW COMPONENT: NATIVE SHARE/IMAGE TRIGGER
-    # This script uses the Web Share API to prompt the mobile device to "share" the current view.
-    # On mobile, this allows the user to take a snapshot/PDF of the specific area and send to WhatsApp.
-    share_js = """
-    <script>
-    async function shareReport() {
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: 'Digital Printing Production Report',
-            text: 'Daily Production Summary: """ + friendly_date + """',
-            url: window.location.href
-          });
-        } catch (err) {
-          console.log("Share failed", err);
-        }
-      } else {
-        alert("Native share not supported on this browser. Please use the 'Create PDF' button.");
-      }
-    }
-    </script>
-    <button onclick="shareReport()" style="
-        background-color: #6c5ce7;
-        color: white;
-        padding: 12px;
-        width: 100%;
-        border: none;
-        border-radius: 8px;
-        font-weight: bold;
-        cursor: pointer;
-        margin-bottom: 10px;">
-        📸 Share Report Snapshot (Mobile)
-    </button>
-    """
+    share_js = """<script>async function shareReport() { if (navigator.share) { try { await navigator.share({ title: 'Digital Printing Production Report', text: 'Daily Production Summary: """ + friendly_date + """', url: window.location.href }); } catch (err) { console.log("Share failed", err); } } else { alert("Native share not supported on this browser."); } }</script><button onclick="shareReport()" style="background-color: #6c5ce7; color: white; padding: 12px; width: 100%; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 10px;">📸 Share Report Snapshot (Mobile)</button>"""
     st.components.v1.html(share_js, height=60)
 
-    # 2. ORIGINAL JAVASCRIPT PRINT BUTTON
-    print_js = """
-    <script>
-    function printReport() {
-        setTimeout(function() {
-            window.print();
-        }, 1000);
-    }
-    </script>
-    <button onclick="printReport()" style="
-        background-color: #0083B8;
-        color: white;
-        padding: 12px;
-        width: 100%;
-        border: none;
-        border-radius: 8px;
-        font-weight: bold;
-        cursor: pointer;
-        margin-bottom: 10px;">
-        📄 Create PDF (System Dialog)
-    </button>
-    """
+    print_js = """<script>function printReport() { setTimeout(function() { window.print(); }, 1000); }</script><button onclick="printReport()" style="background-color: #0083B8; color: white; padding: 12px; width: 100%; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 10px;">📄 Create PDF (System Dialog)</button>"""
     st.components.v1.html(print_js, height=70)
 
-    # 3. DIRECT PDF DOWNLOAD (Via Google Sheets Export)
     sheet_id = SPREADSHEET_URL.split("/d/")[1].split("/")[0]
     pdf_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=pdf"
-    
-    st.markdown(f'''
-        <a href="{pdf_export_url}" target="_blank" style="text-decoration: none;">
-            <div style="
-                background-color: #E74C3C;
-                color: white;
-                padding: 12px;
-                text-align: center;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                margin-bottom: 20px;">
-                📥 Download Data as PDF (Full List)
-            </div>
-        </a>
-        ''', unsafe_allow_html=True)
+    st.markdown(f'''<a href="{pdf_export_url}" target="_blank" style="text-decoration: none;"><div style="background-color: #E74C3C; color: white; padding: 12px; text-align: center; border-radius: 8px; font-size: 14px; font-weight: bold; margin-bottom: 20px;">📥 Download Data as PDF (Full List)</div></a>''', unsafe_allow_html=True)
 
 with col_share2:
     st.write("Step 2: Send WhatsApp")
     if clean_phone:
-        st.markdown(f'''
-            <a href="{wa_link}" target="_blank" style="text-decoration: none;">
-                <div style="
-                    background-color: #25D366;
-                    color: white;
-                    padding: 12px;
-                    text-align: center;
-                    border-radius: 8px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-                    📲 Send WhatsApp Message
-                </div>
-            </a>
-            ''', unsafe_allow_html=True)
+        st.markdown(f'''<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; padding: 12px; text-align: center; border-radius: 8px; font-size: 16px; font-weight: bold; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">📲 Send WhatsApp Message</div></a>''', unsafe_allow_html=True)
     else:
         st.warning("Enter phone number.")
 
-        # --- 13. PRINT DAILY SUMMARY TO UI ---
+# --- 13. PRINT DAILY SUMMARY TO UI (CORRECTED) ---
 st.write("---")
 st.subheader("📋 Summary for Today's Entry")
 
-# Create two columns for a clean 'printed' look
 col_print1, col_print2 = st.columns(2)
 
 with col_print1:
     st.markdown("### 📊 Production")
     st.write(f"**Date:** {prod_date.strftime('%d %B %Y')}")
+    # Using 'prod_today' which is linked to the number_input widget
     st.write(f"**Daily Production Total:** {prod_today:,.0f} meters")
     st.write(f"**Jobs Completed:** {jobs_today}")
+    st.write(f"**Trials Completed:** {trials_today}")
 
 with col_print2:
     st.markdown("### ⚠️ Downtime & Issues")
+    # Using the live 'formatted_downtime' string calculated from the tracker
     st.write(f"**Total Downtime:** {formatted_downtime}")
     
-    if selected_issues:
+    # Correctly pulling the list from 'selected_issues' widget
+    if selected_issues and "NoIssue" not in selected_issues:
         st.write("**Issues Logged:**")
         for issue in selected_issues:
             st.write(f"- {issue}")
-    else:
+    elif "NoIssue" in selected_issues:
         st.write("*No issues reported today.*")
+    else:
+        st.write("*Please select status (NoIssue or specific category).*")
