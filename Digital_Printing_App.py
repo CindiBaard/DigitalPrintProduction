@@ -419,3 +419,27 @@ with col_share2:
             ''', unsafe_allow_html=True)
     else:
         st.warning("Enter phone number.")
+
+        # --- 13. PRINT DAILY SUMMARY TO UI ---
+st.write("---")
+st.subheader("📋 Summary for Today's Entry")
+
+# Create two columns for a clean 'printed' look
+col_print1, col_print2 = st.columns(2)
+
+with col_print1:
+    st.markdown("### 📊 Production")
+    st.write(f"**Date:** {prod_date.strftime('%d %B %Y')}")
+    st.write(f"**Daily Production Total:** {prod_today:,.0f} meters")
+    st.write(f"**Jobs Completed:** {jobs_today}")
+
+with col_print2:
+    st.markdown("### ⚠️ Downtime & Issues")
+    st.write(f"**Total Downtime:** {formatted_downtime}")
+    
+    if selected_issues:
+        st.write("**Issues Logged:**")
+        for issue in selected_issues:
+            st.write(f"- {issue}")
+    else:
+        st.write("*No issues reported today.*")
