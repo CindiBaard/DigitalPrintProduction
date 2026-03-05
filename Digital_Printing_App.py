@@ -195,15 +195,18 @@ prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"
 
 # CHECK FOR DUPLICATES
 is_duplicate = False
+existing_record = None
 if not df_main.empty:
-    is_duplicate = (df_main['ProductionDate_Parsed'].dt.date == prod_date).any()
+    mask = df_main['ProductionDate_Parsed'].dt.date == prod_date
+    is_duplicate = mask.any()
+    if is_duplicate:
+        existing_record = df_main[mask].iloc[0]
 
 if is_duplicate:
     st.error(f"⚠️ An entry for {prod_date} already exists. Use the 'Edit/Delete' section below to modify it.")
 
 prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
 
-# Form variables now defined OUTSIDE the submit logic to be accessible by the summary
 with st.form("main_form", clear_on_submit=True):
     st.subheader("📝 New Daily Entry Details")
     m1, m2, m3 = st.columns(3)
@@ -323,31 +326,48 @@ with col_share2:
     else:
         st.warning("Enter phone number.")
 
-# --- 13. PRINT DAILY SUMMARY TO UI (CORRECTED) ---
+# --- 13. PRINT DAILY SUMMARY TO UI (CORRECTED & DATABASE-AWARE) ---
 st.write("---")
 st.subheader("📋 Summary for Today's Entry")
+
+# DATABASE LOOKUP LOGIC
+if is_duplicate:
+    # Pull data from the existing record found in Google Sheets
+    disp_prod = pd.to_numeric(existing_record['DailyProductionTotal'], errors='coerce')
+    disp_jobs = existing_record['NoOfJobs']
+    disp_trials = existing_record['NoOfTrials']
+    disp_time = existing_record['IssueResolutionTotal']
+    
+    # Gather issues from all possible 10 columns
+    disp_issues = []
+    for i in range(1, 11):
+        issue_val = existing_record.get(f'ProductionIssues_{i}', "NoIssue")
+        if issue_val != "NoIssue" and pd.notna(issue_val):
+            disp_issues.append(issue_val)
+else:
+    # Use live data from the form
+    disp_prod = prod_today
+    disp_jobs = jobs_today
+    disp_trials = trials_today
+    disp_time = formatted_downtime
+    disp_issues = [i for i in selected_issues if i != "NoIssue"]
 
 col_print1, col_print2 = st.columns(2)
 
 with col_print1:
     st.markdown("### 📊 Production")
     st.write(f"**Date:** {prod_date.strftime('%d %B %Y')}")
-    # Using 'prod_today' which is linked to the number_input widget
-    st.write(f"**Daily Production Total:** {prod_today:,.0f} meters")
-    st.write(f"**Jobs Completed:** {jobs_today}")
-    st.write(f"**Trials Completed:** {trials_today}")
+    st.write(f"**Daily Production Total:** {disp_prod:,.0f} meters")
+    st.write(f"**Jobs Completed:** {disp_jobs}")
+    st.write(f"**Trials Completed:** {disp_trials}")
 
 with col_print2:
     st.markdown("### ⚠️ Downtime & Issues")
-    # Using the live 'formatted_downtime' string calculated from the tracker
-    st.write(f"**Total Downtime:** {formatted_downtime}")
+    st.write(f"**Total Downtime:** {disp_time}")
     
-    # Correctly pulling the list from 'selected_issues' widget
-    if selected_issues and "NoIssue" not in selected_issues:
+    if disp_issues:
         st.write("**Issues Logged:**")
-        for issue in selected_issues:
+        for issue in disp_issues:
             st.write(f"- {issue}")
-    elif "NoIssue" in selected_issues:
-        st.write("*No issues reported today.*")
     else:
-        st.write("*Please select status (NoIssue or specific category).*")
+        st.write("*No issues reported today.*")
