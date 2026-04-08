@@ -202,35 +202,30 @@ if search_input:
 
         submit_trial = st.form_submit_button("Submit Trial Entry")
 
+# Ensure this line is inside the form block
+        submit_trial = st.form_submit_button("Submit Trial Entry")
+
         if submit_trial:
-            # Create Submission Dictionary
+            # All lines below MUST be indented relative to the 'if'
             new_submission = {
                 "Trial Ref": current_trial_ref,
                 "Pre-Prod No.": search_input,
                 "Date": trial_date.strftime("%Y-%m-%d"),
-                "Sales Rep": sales_rep,
-                "Client": client,
-                "Operator": operator,
-                "Machine Prod": machine_prod,
-                "Machine Trial": machine_trial,
-                "Observations": notes,
-                "Cycle Time": cyc_t,
-                "Inj Pressure": inj_p,
-                "Tinuvin": tinuvin_val,
-                "Dosing Unit Fitted": dosing_fitted,
-                "Dosing Calibrated": dosing_calib
+                # ... add all other fields ...
             }
 
-            # Save to Parquet
+            # This logic must also stay indented
             df_new = pd.DataFrame([new_submission])
+            
             if os.path.exists(SUBMISSIONS_FILE):
                 df_existing = pd.read_parquet(SUBMISSIONS_FILE)
                 df_final = pd.concat([df_existing, df_new], ignore_index=True)
             else:
                 df_final = df_new
+                
             df_final.to_parquet(SUBMISSIONS_FILE)
             
-            # Update CSV Tracker
+            # Update the external CSV
             update_tracker_status(search_input)
             
             st.success(f"Success! {current_trial_ref} recorded.")
