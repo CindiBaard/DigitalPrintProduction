@@ -371,3 +371,58 @@ with col_print2:
             st.write(f"- {issue}")
     else:
         st.write("*No issues reported today.*")
+
+# --- 14. WASTE MATERIAL TRACKING ---
+st.write("---")
+st.subheader("♻️ Waste Material Tracking")
+
+# Creating layout columns for the individual waste material inputs
+w_col1, w_col2, w_col3 = st.columns(3)
+
+with w_col1:
+    pbl_white = st.number_input(
+        "PBL White Waste Weight (kg)", 
+        min_value=0.0, 
+        step=0.1, 
+        format="%.2f", 
+        key=f"pbl_white_{v}"
+    )
+
+with w_col2:
+    abl_white = st.number_input(
+        "ABL White Waste Weight (kg)", 
+        min_value=0.0, 
+        step=0.1, 
+        format="%.2f", 
+        key=f"abl_white_{v}"
+    )
+
+with w_col3:
+    abl_silver = st.number_input(
+        "ABL Silver Waste Weight (kg)", 
+        min_value=0.0, 
+        step=0.1, 
+        format="%.2f", 
+        key=f"abl_silver_{v}"
+    )
+
+# Calculating Gross Total
+gross_waste_total = pbl_white + abl_white + abl_silver
+
+# Display the Gross Total visually using a metric box
+st.metric(
+    label="📊 Gross Total Waste Material", 
+    value=f"{gross_waste_total:,.2f} kg"
+)
+
+# Append Waste details directly to "Today's Entry Summary" for complete report scanning
+st.write("---")
+st.markdown("### 📋 Waste Summary For Report")
+col_waste_sum1, col_waste_sum2 = st.columns(2)
+
+with col_waste_sum1:
+    st.write(f"**PBL White Waste:** {pbl_white:.2f} kg")
+    st.write(f"**ABL White Waste:** {abl_white:.2f} kg")
+with col_waste_sum2:
+    st.write(f"**ABL Silver Waste:** {abl_silver:.2f} kg")
+    st.write(f"**Gross Total Waste:** {gross_waste_total:.2f} kg")
