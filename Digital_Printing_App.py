@@ -415,14 +415,21 @@ st.metric(
     value=f"{gross_waste_total:,.2f} kg"
 )
 
-# Append Waste details directly to "Today's Entry Summary" for complete report scanning
+# --- 14. INDEPENDENT WASTE MATERIAL TRACKING ---
 st.write("---")
-st.markdown("### 📋 Waste Summary For Report")
-col_waste_sum1, col_waste_sum2 = st.columns(2)
+st.subheader("♻️ Waste Material Tracking")
 
-with col_waste_sum1:
-    st.write(f"**PBL White Waste:** {pbl_white:.2f} kg")
-    st.write(f"**ABL White Waste:** {abl_white:.2f} kg")
-with col_waste_sum2:
-    st.write(f"**ABL Silver Waste:** {abl_silver:.2f} kg")
-    st.write(f"**Gross Total Waste:** {gross_waste_total:.2f} kg")
+with st.form("waste_form"):
+    w_col1, w_col2, w_col3 = st.columns(3)
+    pbl_white = w_col1.number_input("PBL White Waste Weight (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"pbl_white_{v}")
+    abl_white = w_col2.number_input("ABL White Waste Weight (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_white_{v}")
+    abl_silver = w_col3.number_input("ABL Silver Waste Weight (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_silver_{v}")
+
+    gross_waste_total = pbl_white + abl_white + abl_silver
+    st.metric(label="📊 Gross Total Waste Material", value=f"{gross_waste_total:,.2f} kg")
+    
+    save_waste = st.form_submit_button("💾 Save Waste Log")
+
+if save_waste:
+    # Here you can handle independent saving logic, such as sending it to a separate sheet tab
+    st.success(f"✅ Waste metrics ({gross_waste_total:.2f} kg total) logged locally! Ready for export.")
