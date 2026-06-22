@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
 import ssl
@@ -29,6 +28,7 @@ except ImportError:
     PLOTLY_AVAILABLE = False
 
 # --- 3. CONSTANTS & COLUMNS ---
+# Added waste monitoring tags to matching sheet structures
 ALL_COLUMNS = [
     'ProductionDate', 'NoOfJobs', 'NoOfTrials', 'DailyProductionTotal',
     'WeeklyProductionTotal', 'MonthlyProductionTotal', 'YearlyProductionTotal',
@@ -37,6 +37,7 @@ ALL_COLUMNS = [
     'ProductionIssues_3', 'ProductionIssues_4', 'ProductionIssues_5',
     'ProductionIssues_6', 'ProductionIssues_7', 'ProductionIssues_8',
     'ProductionIssues_9', 'ProductionIssues_10',
+    'PBL_White', 'ABL_White', 'ABL_Silver', 'Gross_Waste',
     'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
     'TempDate'
 ]
@@ -189,7 +190,7 @@ total_downtime_val = st.session_state.accumulated_downtime + current_session
 formatted_downtime = str(total_downtime_val).split('.')[0]
 t_col3.metric("Current Session", formatted_downtime)
 
-# --- 9. ENTRY FORM ---
+# --- 9. ENTRY FORM WITH INTEGRATED WASTE TRACKING ---
 st.write("---")
 v = st.session_state.form_version
 prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
@@ -220,7 +221,7 @@ with st.form("main_form", clear_on_submit=True):
     pm_mins = c1.number_input("PM Clean (Mins)", value=45, key=f"pm_clean_{v}")
     selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"], key=f"issues_input_{v}")
     
-    # --- ADDED WASTE FIELDS INSIDE THE FORM ---
+    # --- WASTE TRACKING INPUTS ---
     st.write("---")
     st.subheader("♻️ Waste Material Tracking")
     w_col1, w_col2, w_col3 = st.columns(3)
@@ -251,8 +252,6 @@ if submitted and not is_duplicate:
             'CleanMachineTotal': f"{am_mins + pm_mins} mins",
             'IssueResolutionTotal': formatted_downtime,
             'TempDate': prod_date.strftime('%Y-%m-%d'),
-            # Note: To fully save these to your Google Sheet, ensure you add columns 
-            # for 'PBL_White', 'ABL_White', 'ABL_Silver', and 'Gross_Waste' to your ALL_COLUMNS list.
             'PBL_White': pbl_white,
             'ABL_White': abl_white,
             'ABL_Silver': abl_silver,
@@ -269,3 +268,135 @@ if submitted and not is_duplicate:
         st.session_state.form_version += 1
         st.session_state.accumulated_downtime = timedelta(0) 
         st.rerun()
+    except Exception as e:
+        st.error(f"❌ Save Error: {e}")
+
+# --- 10. EDIT & DELETE MANAGEMENT ---
+st.write("---")
+st.subheader("🛠️ Record Management")
+
+with st.expander("📂 View Historical Records (2024-2025) - Read Only"):
+    st.warning("🔒 Records from 2024 and 2025 are archived and cannot be modified.")
+    if not df_main.empty:
+        hist_df = df_main[df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])].copy()
+        st.dataframe(hist_df.drop(columns=['ProductionDate_Parsed'], errors='ignore'), use_container_width=True)
+
+with st.expander("📝 Edit 2026 Records"):
+    st.info("💡 Only 2026 entries are displayed here for editing.")
+    if not df_main.empty:
+        hist_mask = df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])
+        locked_part = df_main[hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
+        editable_part = df_main[~hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
+        
+        edited_recent = st.data_editor(
+            editable_part, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            key="editor_2026"
+        )
+        
+        if st.button("💾 Save 2026 Changes"):
+            try:
+                final_df = pd.concat([locked_part, edited_recent], ignore_index=True).fillna("")
+                conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
+                st.success("✅ 2026 records updated successfully!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Update Error: {e}")
+    else:
+        st.info("No records available to edit.")
+
+# --- 11. RECENT VIEW ---
+st.write("---")
+st.subheader("📋 Recent Records (Read Only)")
+if not df_main.empty:
+    st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
+
+# --- 12. EXPORT & SHARE ---
+st.write("---")
+st.subheader("📤 Export & Share Report")
+
+friendly_date = datetime.now().strftime('%d %B %Y')
+whatsapp_phone = st.text_input("Colleague's WhatsApp Number (e.g. 27123456789)", placeholder="27123456789")
+clean_phone = ''.join(filter(str.isdigit, whatsapp_phone))
+share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f}"
+encoded_msg = urllib.parse.quote(share_message)
+wa_link = f"https://wa.me/{clean_phone}?text={encoded_msg}"
+
+col_share1, col_share2 = st.columns(2)
+with col_share1:
+    st.write("Step 1: Save Report")
+    share_js = """<script>async function shareReport() { if (navigator.share) { try { await navigator.share({ title: 'Digital Printing Production Report', text: 'Daily Production Summary: """ + friendly_date + """', url: window.location.href }); } catch (err) { console.log("Share failed", err); } } else { alert("Native share not supported on this browser."); } }</script><button onclick="shareReport()" style="background-color: #6c5ce7; color: white; padding: 12px; width: 100%; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 10px;">📸 Share Report Snapshot (Mobile)</button>"""
+    st.components.v1.html(share_js, height=60)
+
+    print_js = """<script>function printReport() { setTimeout(function() { window.print(); }, 1000); }</script><button onclick="printReport()" style="background-color: #0083B8; color: white; padding: 12px; width: 100%; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 10px;">📄 Create PDF (System Dialog)</button>"""
+    st.components.v1.html(print_js, height=70)
+
+    sheet_id = SPREADSHEET_URL.split("/d/")[1].split("/")[0]
+    pdf_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=pdf"
+    st.markdown(f'''<a href="{pdf_export_url}" target="_blank" style="text-decoration: none;"><div style="background-color: #E74C3C; color: white; padding: 12px; text-align: center; border-radius: 8px; font-size: 14px; font-weight: bold; margin-bottom: 20px;">📥 Download Data as PDF (Full List)</div></a>''', unsafe_allow_html=True)
+
+with col_share2:
+    st.write("Step 2: Send WhatsApp")
+    if clean_phone:
+        st.markdown(f'''<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; padding: 12px; text-align: center; border-radius: 8px; font-size: 16px; font-weight: bold; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">📲 Send WhatsApp Message</div></a>''', unsafe_allow_html=True)
+    else:
+        st.warning("Enter phone number.")
+
+# --- 13. PRINT DAILY SUMMARY TO UI (DATABASE-AWARE) ---
+st.write("---")
+st.subheader("📋 Summary for Today's Entry")
+
+if is_duplicate:
+    disp_prod = pd.to_numeric(existing_record['DailyProductionTotal'], errors='coerce')
+    disp_jobs = existing_record['NoOfJobs']
+    disp_trials = existing_record['NoOfTrials']
+    disp_time = existing_record['IssueResolutionTotal']
+    
+    # Retrieve waste attributes if they already exist in dataset
+    disp_pbl_w = existing_record.get('PBL_White', 0.0)
+    disp_abl_w = existing_record.get('ABL_White', 0.0)
+    disp_abl_s = existing_record.get('ABL_Silver', 0.0)
+    disp_waste_tot = existing_record.get('Gross_Waste', 0.0)
+    
+    disp_issues = []
+    for i in range(1, 11):
+        issue_val = existing_record.get(f'ProductionIssues_{i}', "NoIssue")
+        if issue_val != "NoIssue" and pd.notna(issue_val):
+            disp_issues.append(issue_val)
+else:
+    disp_prod = prod_today
+    disp_jobs = jobs_today
+    disp_trials = trials_today
+    disp_time = formatted_downtime
+    disp_pbl_w = pbl_white
+    disp_abl_w = abl_white
+    disp_abl_s = abl_silver
+    disp_waste_tot = gross_waste_total
+    disp_issues = [i for i in selected_issues if i != "NoIssue"]
+
+col_print1, col_print2, col_print3 = st.columns(3)
+
+with col_print1:
+    st.markdown("### 📊 Production")
+    st.write(f"**Date:** {prod_date.strftime('%d %B %Y')}")
+    st.write(f"**Daily Production Total:** {disp_prod:,.0f} m")
+    st.write(f"**Jobs Completed:** {disp_jobs}")
+    st.write(f"**Trials Completed:** {disp_trials}")
+
+with col_print2:
+    st.markdown("### ⚠️ Downtime & Issues")
+    st.write(f"**Total Downtime:** {disp_time}")
+    if disp_issues:
+        st.write("**Issues Logged:**")
+        for issue in disp_issues:
+            st.write(f"- {issue}")
+    else:
+        st.write("*No issues reported*")
+
+with col_print3:
+    st.markdown("### ♻️ Waste Material Log")
+    st.write(f"**PBL White:** {disp_pbl_w:.2f} kg")
+    st.write(f"**ABL White:** {disp_abl_w:.2f} kg")
+    st.write(f"**ABL Silver:** {disp_abl_s:.2f} kg")
+    st.write(f"**Gross Waste Weight:** {disp_waste_tot:.2f} kg")
