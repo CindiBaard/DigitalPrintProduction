@@ -28,7 +28,7 @@ except ImportError:
     PLOTLY_AVAILABLE = False
 
 # --- 3. CONSTANTS & COLUMNS ---
-# Added waste monitoring tags to matching sheet structures
+# Added waste columns so they map properly to your Google Sheet database
 ALL_COLUMNS = [
     'ProductionDate', 'NoOfJobs', 'NoOfTrials', 'DailyProductionTotal',
     'WeeklyProductionTotal', 'MonthlyProductionTotal', 'YearlyProductionTotal',
@@ -146,7 +146,7 @@ total_seconds = int(ytd_downtime_2026.total_seconds())
 hours, minutes = total_seconds // 3600, (total_seconds % 3600) // 60
 col5.metric("⏱️ 2026 YTD Downtime", f"{hours}h {minutes}m")
 
-# --- NEW: 2026 PRODUCTION CHART ---
+# --- 2026 PRODUCTION CHART ---
 st.write("---")
 if PLOTLY_AVAILABLE and not df_main.empty:
     chart_df = df_main[df_main['ProductionDate_Parsed'].dt.year == 2026].copy()
@@ -190,7 +190,7 @@ total_downtime_val = st.session_state.accumulated_downtime + current_session
 formatted_downtime = str(total_downtime_val).split('.')[0]
 t_col3.metric("Current Session", formatted_downtime)
 
-# --- 9. ENTRY FORM WITH INTEGRATED WASTE TRACKING ---
+# --- 9. ENTRY FORM WITH INTEGRATED WASTE AND SUBMIT BUTTON ---
 st.write("---")
 v = st.session_state.form_version
 prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
@@ -221,7 +221,7 @@ with st.form("main_form", clear_on_submit=True):
     pm_mins = c1.number_input("PM Clean (Mins)", value=45, key=f"pm_clean_{v}")
     selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"], key=f"issues_input_{v}")
     
-    # --- WASTE TRACKING INPUTS ---
+    # --- WASTE TRACKING TRACK INTERACTION ---
     st.write("---")
     st.subheader("♻️ Waste Material Tracking")
     w_col1, w_col2, w_col3 = st.columns(3)
@@ -230,7 +230,7 @@ with st.form("main_form", clear_on_submit=True):
     abl_silver = w_col3.number_input("ABL Silver Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_silver_{v}")
     
     gross_waste_total = pbl_white + abl_white + abl_silver
-    st.metric(label="📊 Gross Total Waste Material", value=f"{gross_waste_total:,.2f} kg")
+    st.metric(label="📊 Gross Total Waste Material Produced", value=f"{gross_waste_total:,.2f} kg")
     
     submitted = st.form_submit_button("Submit All Production & Waste Data", disabled=is_duplicate)
 
@@ -353,7 +353,7 @@ if is_duplicate:
     disp_trials = existing_record['NoOfTrials']
     disp_time = existing_record['IssueResolutionTotal']
     
-    # Retrieve waste attributes if they already exist in dataset
+    # Retrieve waste parameters from the archived row
     disp_pbl_w = existing_record.get('PBL_White', 0.0)
     disp_abl_w = existing_record.get('ABL_White', 0.0)
     disp_abl_s = existing_record.get('ABL_Silver', 0.0)
