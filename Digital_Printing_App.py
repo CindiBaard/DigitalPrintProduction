@@ -28,7 +28,6 @@ except ImportError:
     PLOTLY_AVAILABLE = False
 
 # --- 3. CONSTANTS & COLUMNS ---
-# Added waste columns directly to the tracked dataframe schema structure
 ALL_COLUMNS = [
     'ProductionDate', 'NoOfJobs', 'NoOfTrials', 'DailyProductionTotal',
     'WeeklyProductionTotal', 'MonthlyProductionTotal', 'YearlyProductionTotal',
@@ -40,6 +39,13 @@ ALL_COLUMNS = [
     'PBL_White', 'ABL_White', 'ABL_Silver', 'Gross_Waste',
     'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
     'TempDate'
+]
+
+# Set of columns that MUST contain numeric data to prevent 1899 date bugs
+NUMERIC_COLUMNS = [
+    'NoOfJobs', 'NoOfTrials', 'DailyProductionTotal', 'WeeklyProductionTotal', 
+    'MonthlyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total',
+    'PBL_White', 'ABL_White', 'ABL_Silver', 'Gross_Waste'
 ]
 
 ISSUE_CATEGORIES = ['NoIssue', 'Adjust voltage', 'Admin/Meeting', 'Air pipe burst', 'Arrived at work late',
@@ -221,7 +227,7 @@ with st.form("main_form", clear_on_submit=True):
     pm_mins = c1.number_input("PM Clean (Mins)", value=45, key=f"pm_clean_{v}")
     selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"], key=f"issues_input_{v}")
     
-    # --- ADDED WASTE FIELDS INSIDE THE FORM ---
+    # --- WASTE FIELDS ---
     st.write("---")
     st.subheader("♻️ Waste Material Tracking")
     w_col1, w_col2, w_col3 = st.columns(3)
@@ -236,33 +242,44 @@ with st.form("main_form", clear_on_submit=True):
 
 if submitted and not is_duplicate:
     try:
-        entry = {col: 0 if "Total" in col or "NoOf" in col else "" for col in ALL_COLUMNS}
+        # Crucial Fix: Use 0.0 for numeric items instead of empty string "" to avoid Google Sheets date formatting traps
+        entry = {col: 0.0 if col in NUMERIC_COLUMNS else "" for col in ALL_COLUMNS}
         issues_to_save = selected_issues if selected_issues else ["NoIssue"]
         issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
 
         entry.update({
             'ProductionDate': prod_date.strftime('%m/%d/%Y'),
-            'NoOfJobs': jobs_today, 
-            'NoOfTrials': trials_today,
-            'DailyProductionTotal': prod_today,
-            'YearlyProductionTotal': prev_ytd_prod + prod_today, 
-            'YTD_Jobs_Total': prev_ytd_jobs + jobs_today,
+            'NoOfJobs': int(jobs_today), 
+            'NoOfTrials': int(trials_today),
+            'DailyProductionTotal': float(prod_today),
+            'YearlyProductionTotal': float(prev_ytd_prod + prod_today), 
+            'YTD_Jobs_Total': int(prev_ytd_jobs + jobs_today),
             'CleanMachineAm': f"{am_mins} mins",
             'CleanMachinePm': f"{pm_mins} mins",
             'CleanMachineTotal': f"{am_mins + pm_mins} mins",
             'IssueResolutionTotal': formatted_downtime,
             'TempDate': prod_date.strftime('%Y-%m-%d'),
-            'PBL_White': pbl_white,
-            'ABL_White': abl_white,
-            'ABL_Silver': abl_silver,
-            'Gross_Waste': gross_waste_total,
+            'PBL_White': float(pbl_white),
+            'ABL_White': float(abl_white),
+            'ABL_Silver': float(abl_silver),
+            'Gross_Waste': float(gross_waste_total),
             prod_date.strftime('%A'): 1
         })
         entry.update(issue_dict)
 
         new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
-        save_df = pd.concat([df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore'), new_row_df], ignore_index=True).fillna("")
         
+        # Clean background data safely without dropping numeric column precision types
+        clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
+        save_df = pd.concat([clean_df, new_row_df], ignore_index=True)
+        
+        # Explicit fillna rules: Strings get "", numeric columns get 0.0
+        for col in ALL_COLUMNS:
+            if col in NUMERIC_COLUMNS:
+                save_df[col] = pd.to_numeric(save_df[col], errors='coerce').fillna(0.0)
+            else:
+                save_df[col] = save_df[col].fillna("")
+
         conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=save_df)
         st.success("✅ Production and Waste Data saved successfully!")
         st.session_state.form_version += 1
@@ -297,7 +314,11 @@ with st.expander("📝 Edit 2026 Records"):
         
         if st.button("💾 Save 2026 Changes"):
             try:
-                final_df = pd.concat([locked_part, edited_recent], ignore_index=True).fillna("")
+                final_df = pd.concat([locked_part, edited_recent], ignore_index=True)
+                for col in NUMERIC_COLUMNS:
+                    final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0.0)
+                final_df = final_df.fillna("")
+                
                 conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
                 st.success("✅ 2026 records updated successfully!")
                 st.rerun()
@@ -343,7 +364,7 @@ with col_share2:
     else:
         st.warning("Enter phone number.")
 
-# --- 13. PRINT DAILY SUMMARY TO UI (DATABASE-AWARE) ---
+# --- 13. SUMMARY PANEL ---
 st.write("---")
 st.subheader("📋 Summary for Today's Entry")
 
