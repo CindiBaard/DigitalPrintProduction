@@ -4,7 +4,7 @@ import numpy as np
 from streamlit_gsheets import GSheetsConnection
 from datetime import timedelta, datetime
 import ssl
-import urllib.parse  # Added for WhatsApp URL encoding
+import urllib.parse
 
 # --- 1. CONFIG & PAGE SETUP ---
 FORM_TITLE = "Digital Printing Production Data Entry (2026)"
@@ -19,6 +19,43 @@ try:
     ssl._create_default_https_context = ssl._create_unverified_context
 except:
     pass
+
+# --- AUTHENTICATION MODULE (OPTIONAL / READ-ONLY DEFAULT) ---
+if "is_authenticated" not in st.session_state:
+    st.session_state["is_authenticated"] = False
+
+VALID_USERS = {
+    "Cindi": "admin2026!",
+    "Ashley": "print2026!"
+}
+
+def login_form():
+    """Renders login controls without blocking page execution."""
+    if st.session_state["is_authenticated"]:
+        user = st.session_state.get("logged_in_user", "User")
+        c1, c2 = st.columns([8, 2])
+        c1.success(f"🔓 Edit Access Granted | Logged in as: **{user}**")
+        if c2.button("🚪 Log Out"):
+            st.session_state["is_authenticated"] = False
+            st.session_state["logged_in_user"] = None
+            st.rerun()
+    else:
+        with st.expander("🔒 **Passcode Access Required to Edit / Add Entries**"):
+            st.info("The application is in **Read-Only Mode**. Log in below to unlock data entry and editing.")
+            with st.form("login_form"):
+                u_input = st.text_input("Username", key="username_input").strip()
+                p_input = st.text_input("Password", type="password", key="password_input").strip()
+                if st.form_submit_button("Log In"):
+                    if u_input in VALID_USERS and VALID_USERS[u_input] == p_input:
+                        st.session_state["is_authenticated"] = True
+                        st.session_state["logged_in_user"] = u_input
+                        st.success("Successfully authenticated!")
+                        st.rerun()
+                    else:
+                        st.error("😕 Incorrect credentials.")
+
+# Render header login status bar
+login_form()
 
 # --- 2. OPTIONAL LIBRARIES ---
 try:
@@ -41,7 +78,6 @@ ALL_COLUMNS = [
     'TempDate'
 ]
 
-# Set of columns that MUST contain numeric data to prevent 1899 date bugs
 NUMERIC_COLUMNS = [
     'NoOfJobs', 'NoOfTrials', 'DailyProductionTotal', 'WeeklyProductionTotal', 
     'MonthlyProductionTotal', 'YearlyProductionTotal', 'YTD_Jobs_Total',
@@ -71,7 +107,7 @@ ISSUE_CATEGORIES = ['NoIssue', 'Adjust voltage', 'Admin/Meeting', 'Air pipe burs
     'Trials: 4 hr', 'Trials: 5 hr', 'Trials: 6 hr', 'Trials: 8 hr', 'Trials: 9 hr', 
     'Troubleshoot issues with yellow print heads', 'UV lamp issues', 
     'Vertical white, unprinted bands in yellow heads', 'Web tension error (rollers clamping)',
-    'Worked in another day in lieu of Public Holiday',]
+    'Worked in another day in lieu of Public Holiday']
 
 # --- 4. SESSION STATE ---
 if 'form_version' not in st.session_state: st.session_state.form_version = 0
@@ -126,7 +162,6 @@ def calculate_ytd_downtime(historical_df):
             continue
     return total_td
 
-# Annual Totals
 total_2024, total_2025, ytd_2026, ytd_trials_2026 = 0, 0, 0, 0
 ytd_downtime_2026 = timedelta(0)
 
@@ -156,7 +191,6 @@ col5.metric("⏱️ 2026 YTD Downtime", f"{hours}h {minutes}m")
 v = st.session_state.form_version
 prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
 
-# CHECK FOR DUPLICATES
 is_duplicate = False
 existing_record = None
 if not df_main.empty:
@@ -165,14 +199,13 @@ if not df_main.empty:
     if is_duplicate:
         existing_record = df_main[mask].iloc[0]
 
-# Compute timer current state for summary view
 current_session = (datetime.now() - st.session_state.timer_start_time) if st.session_state.is_timer_running else timedelta(0)
 total_downtime_val = st.session_state.accumulated_downtime + current_session
 formatted_downtime = str(total_downtime_val).split('.')[0]
 
-# --- SUMMARY PANEL (MOVED TO TOP) ---
+# --- SUMMARY PANEL (Visible to Everyone) ---
 st.write("---")
-st.subheader("📋 Summary for Today's Entry")
+st.subheader("📋 Summary for Selected Date")
 
 if is_duplicate:
     disp_prod = pd.to_numeric(existing_record['DailyProductionTotal'], errors='coerce')
@@ -191,7 +224,6 @@ if is_duplicate:
         if issue_val != "NoIssue" and pd.notna(issue_val):
             disp_issues.append(issue_val)
 else:
-    # Safely extract widget values from session state if available, else 0
     disp_prod = st.session_state.get(f"prod_input_{v}", 0)
     disp_jobs = st.session_state.get(f"jobs_input_{v}", 0)
     disp_trials = st.session_state.get(f"trials_input_{v}", 0)
@@ -230,7 +262,7 @@ with col_print3:
     st.write(f"**ABL Silver:** {disp_abl_s:.2f} kg")
     st.write(f"**Gross Waste Weight:** {disp_waste_tot:.2f} kg")
 
-# --- 2026 PRODUCTION CHART ---
+# --- 2026 PRODUCTION CHART (Visible to Everyone) ---
 st.write("---")
 if PLOTLY_AVAILABLE and not df_main.empty:
     chart_df = df_main[df_main['ProductionDate_Parsed'].dt.year == 2026].copy()
@@ -249,110 +281,105 @@ if PLOTLY_AVAILABLE and not df_main.empty:
         fig.update_traces(line_color='#0083B8')
         fig.add_hline(y=38600, line_dash="dash", line_color="red", annotation_text="Daily Avg Target")
         st.plotly_chart(fig, use_container_width=True)
+
+# --- 8. TIMER & ENTRY FORM (AUTHENTICATED ONLY) ---
+st.write("---")
+
+if st.session_state["is_authenticated"]:
+    # 8a. TIMER
+    st.subheader("⏱️ Issue Downtime Tracker")
+    t_col1, t_col2, t_col3 = st.columns([1, 1, 2])
+    if not st.session_state.is_timer_running:
+        if t_col1.button("▶️ Start Timer"):
+            st.session_state.timer_start_time = datetime.now()
+            st.session_state.is_timer_running = True
+            st.rerun()
     else:
-        st.info("No 2026 data available yet to display chart.")
-else:
-    st.info("Chart will appear here once 2026 data is recorded.")
+        if t_col1.button("⏹️ Stop Timer"):
+            st.session_state.accumulated_downtime += (datetime.now() - st.session_state.timer_start_time)
+            st.session_state.is_timer_running = False
+            st.rerun()
 
-# --- 8. TIMER UI ---
-st.write("---")
-st.subheader("⏱️ Issue Downtime Tracker")
-t_col1, t_col2, t_col3 = st.columns([1, 1, 2])
-if not st.session_state.is_timer_running:
-    if t_col1.button("▶️ Start Timer"):
-        st.session_state.timer_start_time = datetime.now()
-        st.session_state.is_timer_running = True
-        st.rerun()
-else:
-    if t_col1.button("⏹️ Stop Timer"):
-        st.session_state.accumulated_downtime += (datetime.now() - st.session_state.timer_start_time)
-        st.session_state.is_timer_running = False
-        st.rerun()
+    t_col3.metric("Current Session", formatted_downtime)
 
-t_col3.metric("Current Session", formatted_downtime)
-
-# --- 9. ENTRY FORM ---
-st.write("---")
-
-if is_duplicate:
-    st.error(f"⚠️ An entry for {prod_date} already exists. Use the 'Edit/Delete' section below to modify it.")
-
-prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
-
-with st.form("main_form", clear_on_submit=True):
-    st.subheader("📝 New Daily Entry Details")
-    m1, m2, m3 = st.columns(3)
-    jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key=f"jobs_input_{v}")
-    prod_today = m2.number_input("Production Total", min_value=0, step=100, key=f"prod_input_{v}")
-    trials_today = m3.number_input("Trials Today", min_value=0, step=1, key=f"trials_input_{v}")
-    
-    c1, c2 = st.columns(2)
-    am_mins = c1.number_input("AM Clean (Mins)", value=45, key=f"am_clean_{v}")
-    pm_mins = c1.number_input("PM Clean (Mins)", value=45, key=f"pm_clean_{v}")
-    selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"], key=f"issues_input_{v}")
-    
-    # --- WASTE FIELDS ---
+    # 8b. ENTRY FORM
     st.write("---")
-    st.subheader("♻️ Waste Material Tracking")
-    w_col1, w_col2, w_col3 = st.columns(3)
-    pbl_white = w_col1.number_input("PBL White Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"pbl_white_{v}")
-    abl_white = w_col2.number_input("ABL White Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_white_{v}")
-    abl_silver = w_col3.number_input("ABL Silver Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_silver_{v}")
-    
-    gross_waste_total = pbl_white + abl_white + abl_silver
-    st.metric(label="📊 Gross Total Waste Material", value=f"{gross_waste_total:,.2f} kg")
-    
-    submitted = st.form_submit_button("Submit All Production & Waste Data", disabled=is_duplicate)
+    if is_duplicate:
+        st.error(f"⚠️ An entry for {prod_date} already exists. Use the 'Edit/Delete' section below to modify it.")
 
-if submitted and not is_duplicate:
-    try:
-        # Crucial Fix: Use 0.0 for numeric items instead of empty string "" to avoid Google Sheets date formatting traps
-        entry = {col: 0.0 if col in NUMERIC_COLUMNS else "" for col in ALL_COLUMNS}
-        issues_to_save = selected_issues if selected_issues else ["NoIssue"]
-        issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
+    prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
 
-        entry.update({
-            'ProductionDate': prod_date.strftime('%m/%d/%Y'),
-            'NoOfJobs': int(jobs_today), 
-            'NoOfTrials': int(trials_today),
-            'DailyProductionTotal': float(prod_today),
-            'YearlyProductionTotal': float(prev_ytd_prod + prod_today), 
-            'YTD_Jobs_Total': int(prev_ytd_jobs + jobs_today),
-            'CleanMachineAm': f"{am_mins} mins",
-            'CleanMachinePm': f"{pm_mins} mins",
-            'CleanMachineTotal': f"{am_mins + pm_mins} mins",
-            'IssueResolutionTotal': formatted_downtime,
-            'TempDate': prod_date.strftime('%Y-%m-%d'),
-            'PBL_White': float(pbl_white),
-            'ABL_White': float(abl_white),
-            'ABL_Silver': float(abl_silver),
-            'Gross_Waste': float(gross_waste_total),
-            prod_date.strftime('%A'): 1
-        })
-        entry.update(issue_dict)
-
-        new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
+    with st.form("main_form", clear_on_submit=True):
+        st.subheader("📝 New Daily Entry Details")
+        m1, m2, m3 = st.columns(3)
+        jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key=f"jobs_input_{v}")
+        prod_today = m2.number_input("Production Total", min_value=0, step=100, key=f"prod_input_{v}")
+        trials_today = m3.number_input("Trials Today", min_value=0, step=1, key=f"trials_input_{v}")
         
-        # Clean background data safely without dropping numeric column precision types
-        clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
-        save_df = pd.concat([clean_df, new_row_df], ignore_index=True)
+        c1, c2 = st.columns(2)
+        am_mins = c1.number_input("AM Clean (Mins)", value=45, key=f"am_clean_{v}")
+        pm_mins = c1.number_input("PM Clean (Mins)", value=45, key=f"pm_clean_{v}")
+        selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"], key=f"issues_input_{v}")
         
-        # Explicit fillna rules: Strings get "", numeric columns get 0.0
-        for col in ALL_COLUMNS:
-            if col in NUMERIC_COLUMNS:
-                save_df[col] = pd.to_numeric(save_df[col], errors='coerce').fillna(0.0)
-            else:
-                save_df[col] = save_df[col].fillna("")
+        st.write("---")
+        st.subheader("♻️ Waste Material Tracking")
+        w_col1, w_col2, w_col3 = st.columns(3)
+        pbl_white = w_col1.number_input("PBL White Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"pbl_white_{v}")
+        abl_white = w_col2.number_input("ABL White Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_white_{v}")
+        abl_silver = w_col3.number_input("ABL Silver Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_silver_{v}")
+        
+        gross_waste_total = pbl_white + abl_white + abl_silver
+        st.metric(label="📊 Gross Total Waste Material", value=f"{gross_waste_total:,.2f} kg")
+        
+        submitted = st.form_submit_button("Submit All Production & Waste Data", disabled=is_duplicate)
 
-        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=save_df)
-        st.success("✅ Production and Waste Data saved successfully!")
-        st.session_state.form_version += 1
-        st.session_state.accumulated_downtime = timedelta(0) 
-        st.rerun()
-    except Exception as e:
-        st.error(f"❌ Save Error: {e}")
+    if submitted and not is_duplicate:
+        try:
+            entry = {col: 0.0 if col in NUMERIC_COLUMNS else "" for col in ALL_COLUMNS}
+            issues_to_save = selected_issues if selected_issues else ["NoIssue"]
+            issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
 
-# --- 10. EDIT & DELETE MANAGEMENT ---
+            entry.update({
+                'ProductionDate': prod_date.strftime('%m/%d/%Y'),
+                'NoOfJobs': int(jobs_today), 
+                'NoOfTrials': int(trials_today),
+                'DailyProductionTotal': float(prod_today),
+                'YearlyProductionTotal': float(prev_ytd_prod + prod_today), 
+                'YTD_Jobs_Total': int(prev_ytd_jobs + jobs_today),
+                'CleanMachineAm': f"{am_mins} mins",
+                'CleanMachinePm': f"{pm_mins} mins",
+                'CleanMachineTotal': f"{am_mins + pm_mins} mins",
+                'IssueResolutionTotal': formatted_downtime,
+                'TempDate': prod_date.strftime('%Y-%m-%d'),
+                'PBL_White': float(pbl_white),
+                'ABL_White': float(abl_white),
+                'ABL_Silver': float(abl_silver),
+                'Gross_Waste': float(gross_waste_total),
+                prod_date.strftime('%A'): 1
+            })
+            entry.update(issue_dict)
+
+            new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
+            clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
+            save_df = pd.concat([clean_df, new_row_df], ignore_index=True)
+            
+            for col in ALL_COLUMNS:
+                if col in NUMERIC_COLUMNS:
+                    save_df[col] = pd.to_numeric(save_df[col], errors='coerce').fillna(0.0)
+                else:
+                    save_df[col] = save_df[col].fillna("")
+
+            conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=save_df)
+            st.success("✅ Production and Waste Data saved successfully!")
+            st.session_state.form_version += 1
+            st.session_state.accumulated_downtime = timedelta(0) 
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Save Error: {e}")
+else:
+    st.info("🔒 **Data Entry & Timer Locked:** Please log in at the top of the page to record new entries.")
+
+# --- 9. RECORD MANAGEMENT & TABLES ---
 st.write("---")
 st.subheader("🛠️ Record Management")
 
@@ -363,41 +390,46 @@ with st.expander("📂 View Historical Records (2024-2025) - Read Only"):
         st.dataframe(hist_df.drop(columns=['ProductionDate_Parsed'], errors='ignore'), use_container_width=True)
 
 with st.expander("📝 Edit 2026 Records"):
-    st.info("💡 Only 2026 entries are displayed here for editing.")
-    if not df_main.empty:
-        hist_mask = df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])
-        locked_part = df_main[hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
-        editable_part = df_main[~hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
-        
-        edited_recent = st.data_editor(
-            editable_part, 
-            num_rows="dynamic", 
-            use_container_width=True,
-            key="editor_2026"
-        )
-        
-        if st.button("💾 Save 2026 Changes"):
-            try:
-                final_df = pd.concat([locked_part, edited_recent], ignore_index=True)
-                for col in NUMERIC_COLUMNS:
-                    final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0.0)
-                final_df = final_df.fillna("")
-                
-                conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
-                st.success("✅ 2026 records updated successfully!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Update Error: {e}")
+    if st.session_state["is_authenticated"]:
+        st.info("💡 Only 2026 entries are displayed here for editing.")
+        if not df_main.empty:
+            hist_mask = df_main['ProductionDate_Parsed'].dt.year.isin([2024, 2025])
+            locked_part = df_main[hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
+            editable_part = df_main[~hist_mask].drop(columns=['ProductionDate_Parsed'], errors='ignore')
+            
+            edited_recent = st.data_editor(
+                editable_part, 
+                num_rows="dynamic", 
+                use_container_width=True,
+                key="editor_2026"
+            )
+            
+            if st.button("💾 Save 2026 Changes"):
+                try:
+                    final_df = pd.concat([locked_part, edited_recent], ignore_index=True)
+                    for col in NUMERIC_COLUMNS:
+                        final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0.0)
+                    final_df = final_df.fillna("")
+                    
+                    conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=final_df)
+                    st.success("✅ 2026 records updated successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Update Error: {e}")
+        else:
+            st.info("No records available to edit.")
     else:
-        st.info("No records available to edit.")
+        st.warning("🔒 **Editing Restricted:** Log in at the top of the page to edit records.")
+        if not df_main.empty:
+            recent_2026 = df_main[df_main['ProductionDate_Parsed'].dt.year == 2026].drop(columns=['ProductionDate_Parsed'], errors='ignore')
+            st.dataframe(recent_2026, use_container_width=True)
 
-# --- 11. RECENT VIEW ---
+# --- 10. RECENT VIEW & SHARING (Read-Only) ---
 st.write("---")
 st.subheader("📋 Recent Records (Read Only)")
 if not df_main.empty:
     st.dataframe(df_main.sort_values('ProductionDate_Parsed', ascending=False).head(10), use_container_width=True)
 
-# --- 12. EXPORT & SHARE ---
 st.write("---")
 st.subheader("📤 Export & Share Report")
 
