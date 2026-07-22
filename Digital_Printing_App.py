@@ -152,6 +152,84 @@ total_seconds = int(ytd_downtime_2026.total_seconds())
 hours, minutes = total_seconds // 3600, (total_seconds % 3600) // 60
 col5.metric("⏱️ 2026 YTD Downtime", f"{hours}h {minutes}m")
 
+# --- INITIALIZE DATE & DATA FOR SUMMARY ---
+v = st.session_state.form_version
+prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
+
+# CHECK FOR DUPLICATES
+is_duplicate = False
+existing_record = None
+if not df_main.empty:
+    mask = df_main['ProductionDate_Parsed'].dt.date == prod_date
+    is_duplicate = mask.any()
+    if is_duplicate:
+        existing_record = df_main[mask].iloc[0]
+
+# Compute timer current state for summary view
+current_session = (datetime.now() - st.session_state.timer_start_time) if st.session_state.is_timer_running else timedelta(0)
+total_downtime_val = st.session_state.accumulated_downtime + current_session
+formatted_downtime = str(total_downtime_val).split('.')[0]
+
+# --- SUMMARY PANEL (MOVED TO TOP) ---
+st.write("---")
+st.subheader("📋 Summary for Today's Entry")
+
+if is_duplicate:
+    disp_prod = pd.to_numeric(existing_record['DailyProductionTotal'], errors='coerce')
+    disp_jobs = existing_record['NoOfJobs']
+    disp_trials = existing_record['NoOfTrials']
+    disp_time = existing_record['IssueResolutionTotal']
+    
+    disp_pbl_w = existing_record.get('PBL_White', 0.0)
+    disp_abl_w = existing_record.get('ABL_White', 0.0)
+    disp_abl_s = existing_record.get('ABL_Silver', 0.0)
+    disp_waste_tot = existing_record.get('Gross_Waste', 0.0)
+    
+    disp_issues = []
+    for i in range(1, 11):
+        issue_val = existing_record.get(f'ProductionIssues_{i}', "NoIssue")
+        if issue_val != "NoIssue" and pd.notna(issue_val):
+            disp_issues.append(issue_val)
+else:
+    # Safely extract widget values from session state if available, else 0
+    disp_prod = st.session_state.get(f"prod_input_{v}", 0)
+    disp_jobs = st.session_state.get(f"jobs_input_{v}", 0)
+    disp_trials = st.session_state.get(f"trials_input_{v}", 0)
+    disp_time = formatted_downtime
+    disp_pbl_w = st.session_state.get(f"pbl_white_{v}", 0.0)
+    disp_abl_w = st.session_state.get(f"abl_white_{v}", 0.0)
+    disp_abl_s = st.session_state.get(f"abl_silver_{v}", 0.0)
+    disp_waste_tot = disp_pbl_w + disp_abl_w + disp_abl_s
+    
+    selected_issues_val = st.session_state.get(f"issues_input_{v}", ["NoIssue"])
+    disp_issues = [i for i in selected_issues_val if i != "NoIssue"]
+
+col_print1, col_print2, col_print3 = st.columns(3)
+
+with col_print1:
+    st.markdown("### 📊 Production")
+    st.write(f"**Date:** {prod_date.strftime('%d %B %Y')}")
+    st.write(f"**Daily Production Total:** {disp_prod:,.0f} m")
+    st.write(f"**Jobs Completed:** {disp_jobs}")
+    st.write(f"**Trials Completed:** {disp_trials}")
+
+with col_print2:
+    st.markdown("### ⚠️ Downtime & Issues")
+    st.write(f"**Total Downtime:** {disp_time}")
+    if disp_issues:
+        st.write("**Issues Logged:**")
+        for issue in disp_issues:
+            st.write(f"- {issue}")
+    else:
+        st.write("*No issues reported*")
+
+with col_print3:
+    st.markdown("### ♻️ Waste Material Log")
+    st.write(f"**PBL White:** {disp_pbl_w:.2f} kg")
+    st.write(f"**ABL White:** {disp_abl_w:.2f} kg")
+    st.write(f"**ABL Silver:** {disp_abl_s:.2f} kg")
+    st.write(f"**Gross Waste Weight:** {disp_waste_tot:.2f} kg")
+
 # --- 2026 PRODUCTION CHART ---
 st.write("---")
 if PLOTLY_AVAILABLE and not df_main.empty:
@@ -191,24 +269,10 @@ else:
         st.session_state.is_timer_running = False
         st.rerun()
 
-current_session = (datetime.now() - st.session_state.timer_start_time) if st.session_state.is_timer_running else timedelta(0)
-total_downtime_val = st.session_state.accumulated_downtime + current_session
-formatted_downtime = str(total_downtime_val).split('.')[0]
 t_col3.metric("Current Session", formatted_downtime)
 
 # --- 9. ENTRY FORM ---
 st.write("---")
-v = st.session_state.form_version
-prod_date = st.date_input("Production Date", value=datetime.now().date(), key=f"date_{v}")
-
-# CHECK FOR DUPLICATES
-is_duplicate = False
-existing_record = None
-if not df_main.empty:
-    mask = df_main['ProductionDate_Parsed'].dt.date == prod_date
-    is_duplicate = mask.any()
-    if is_duplicate:
-        existing_record = df_main[mask].iloc[0]
 
 if is_duplicate:
     st.error(f"⚠️ An entry for {prod_date} already exists. Use the 'Edit/Delete' section below to modify it.")
@@ -363,60 +427,3 @@ with col_share2:
         st.markdown(f'''<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; padding: 12px; text-align: center; border-radius: 8px; font-size: 16px; font-weight: bold; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">📲 Send WhatsApp Message</div></a>''', unsafe_allow_html=True)
     else:
         st.warning("Enter phone number.")
-
-# --- 13. SUMMARY PANEL ---
-st.write("---")
-st.subheader("📋 Summary for Today's Entry")
-
-if is_duplicate:
-    disp_prod = pd.to_numeric(existing_record['DailyProductionTotal'], errors='coerce')
-    disp_jobs = existing_record['NoOfJobs']
-    disp_trials = existing_record['NoOfTrials']
-    disp_time = existing_record['IssueResolutionTotal']
-    
-    disp_pbl_w = existing_record.get('PBL_White', 0.0)
-    disp_abl_w = existing_record.get('ABL_White', 0.0)
-    disp_abl_s = existing_record.get('ABL_Silver', 0.0)
-    disp_waste_tot = existing_record.get('Gross_Waste', 0.0)
-    
-    disp_issues = []
-    for i in range(1, 11):
-        issue_val = existing_record.get(f'ProductionIssues_{i}', "NoIssue")
-        if issue_val != "NoIssue" and pd.notna(issue_val):
-            disp_issues.append(issue_val)
-else:
-    disp_prod = prod_today
-    disp_jobs = jobs_today
-    disp_trials = trials_today
-    disp_time = formatted_downtime
-    disp_pbl_w = pbl_white
-    disp_abl_w = abl_white
-    disp_abl_s = abl_silver
-    disp_waste_tot = gross_waste_total
-    disp_issues = [i for i in selected_issues if i != "NoIssue"]
-
-col_print1, col_print2, col_print3 = st.columns(3)
-
-with col_print1:
-    st.markdown("### 📊 Production")
-    st.write(f"**Date:** {prod_date.strftime('%d %B %Y')}")
-    st.write(f"**Daily Production Total:** {disp_prod:,.0f} m")
-    st.write(f"**Jobs Completed:** {disp_jobs}")
-    st.write(f"**Trials Completed:** {disp_trials}")
-
-with col_print2:
-    st.markdown("### ⚠️ Downtime & Issues")
-    st.write(f"**Total Downtime:** {disp_time}")
-    if disp_issues:
-        st.write("**Issues Logged:**")
-        for issue in disp_issues:
-            st.write(f"- {issue}")
-    else:
-        st.write("*No issues reported*")
-
-with col_print3:
-    st.markdown("### ♻️ Waste Material Log")
-    st.write(f"**PBL White:** {disp_pbl_w:.2f} kg")
-    st.write(f"**ABL White:** {disp_abl_w:.2f} kg")
-    st.write(f"**ABL Silver:** {disp_abl_s:.2f} kg")
-    st.write(f"**Gross Waste Weight:** {disp_waste_tot:.2f} kg")
