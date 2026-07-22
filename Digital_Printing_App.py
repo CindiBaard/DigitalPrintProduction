@@ -436,26 +436,77 @@ st.subheader("📤 Export & Share Report")
 friendly_date = datetime.now().strftime('%d %B %Y')
 whatsapp_phone = st.text_input("Colleague's WhatsApp Number (e.g. 27123456789)", placeholder="27123456789")
 clean_phone = ''.join(filter(str.isdigit, whatsapp_phone))
-share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f}"
+share_message = f"Digital Printing Report: {friendly_date}\n\nTotal Production: {ytd_2026:,.0f} m\nLink: {SPREADSHEET_URL}"
 encoded_msg = urllib.parse.quote(share_message)
 wa_link = f"https://wa.me/{clean_phone}?text={encoded_msg}"
 
 col_share1, col_share2 = st.columns(2)
+
 with col_share1:
-    st.write("Step 1: Save Report")
-    share_js = """<script>async function shareReport() { if (navigator.share) { try { await navigator.share({ title: 'Digital Printing Production Report', text: 'Daily Production Summary: """ + friendly_date + """', url: window.location.href }); } catch (err) { console.log("Share failed", err); } } else { alert("Native share not supported on this browser."); } }</script><button onclick="shareReport()" style="background-color: #6c5ce7; color: white; padding: 12px; width: 100%; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 10px;">📸 Share Report Snapshot (Mobile)</button>"""
-    st.components.v1.html(share_js, height=60)
+    st.write("### 📄 Print / Save as PDF")
+    
+    # Inject CSS to make sure Streamlit prints cleanly without blank pages
+    print_custom_css = """
+    <style>
+    @media print {
+        /* Hide sidebars, buttons, and navigation elements */
+        header, footer, [data-testid="stSidebar"], .stButton, button, iframe {
+            display: none !important;
+        }
+        /* Ensure the main container expands fully across printable area */
+        .main .block-container {
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        body {
+            background-color: white !important;
+            color: black !important;
+        }
+    }
+    </style>
+    """
+    st.markdown(print_custom_css, unsafe_allow_html=True)
 
-    print_js = """<script>function printReport() { setTimeout(function() { window.print(); }, 1000); }</script><button onclick="printReport()" style="background-color: #0083B8; color: white; padding: 12px; width: 100%; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 10px;">📄 Create PDF (System Dialog)</button>"""
-    st.components.v1.html(print_js, height=70)
+    # JavaScript that targets window.parent to print the actual Streamlit app
+    print_button_html = """
+    <button onclick="window.parent.print()" style="
+        background-color: #0083B8; 
+        color: white; 
+        padding: 12px 20px; 
+        width: 100%; 
+        border: none; 
+        border-radius: 8px; 
+        font-weight: bold; 
+        font-size: 15px;
+        cursor: pointer; 
+        margin-bottom: 12px;
+    ">
+        📄 Save Page as PDF / Print
+    </button>
+    """
+    st.components.v1.html(print_button_html, height=60)
 
+    # Direct Google Sheets PDF Download
     sheet_id = SPREADSHEET_URL.split("/d/")[1].split("/")[0]
     pdf_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=pdf"
-    st.markdown(f'''<a href="{pdf_export_url}" target="_blank" style="text-decoration: none;"><div style="background-color: #E74C3C; color: white; padding: 12px; text-align: center; border-radius: 8px; font-size: 14px; font-weight: bold; margin-bottom: 20px;">📥 Download Data as PDF (Full List)</div></a>''', unsafe_allow_html=True)
+    st.markdown(
+        f'<a href="{pdf_export_url}" target="_blank" style="text-decoration: none;">'
+        f'<div style="background-color: #E74C3C; color: white; padding: 12px; text-align: center; '
+        f'border-radius: 8px; font-size: 14px; font-weight: bold; margin-bottom: 10px;">'
+        f'📥 Download Full Data Sheet (Google PDF)</div></a>', 
+        unsafe_allow_html=True
+    )
 
 with col_share2:
-    st.write("Step 2: Send WhatsApp")
+    st.write("### 📲 Quick WhatsApp Share")
     if clean_phone:
-        st.markdown(f'''<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; padding: 12px; text-align: center; border-radius: 8px; font-size: 16px; font-weight: bold; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">📲 Send WhatsApp Message</div></a>''', unsafe_allow_html=True)
+        st.markdown(
+            f'<a href="{wa_link}" target="_blank" style="text-decoration: none;">'
+            f'<div style="background-color: #25D366; color: white; padding: 14px; text-align: center; '
+            f'border-radius: 8px; font-size: 16px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">'
+            f'📲 Send Summary via WhatsApp</div></a>', 
+            unsafe_allow_html=True
+        )
     else:
-        st.warning("Enter phone number.")
+        st.info("💡 Enter a phone number above to enable the direct WhatsApp sharing button.")
