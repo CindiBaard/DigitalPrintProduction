@@ -25,8 +25,8 @@ if "is_authenticated" not in st.session_state:
     st.session_state["is_authenticated"] = False
 
 VALID_USERS = {
-    "Cindi": "admin2026!",
-    "Ashley": "print2026!"
+    "Cindi": "BowlerSecure2026",
+    "Ashley": "BowlerSecure2026"
 }
 
 def login_form():
