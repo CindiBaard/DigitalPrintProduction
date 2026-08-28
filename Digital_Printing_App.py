@@ -302,82 +302,86 @@ if st.session_state["is_authenticated"]:
 
     t_col3.metric("Current Session", formatted_downtime)
 
-    # 8b. ENTRY FORM
+    # --- 8b. ENTRY FORM ---
+st.write("---")
+if is_duplicate:
+    st.error(f"⚠️ An entry for {prod_date} already exists. Use the 'Edit/Delete' section below to modify it.")
+
+prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
+
+# Keep clear_on_submit=False to preserve entries if save fails
+with st.form("main_form", clear_on_submit=False):
+    st.subheader("📝 New Daily Entry Details")
+    m1, m2, m3 = st.columns(3)
+    jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key="jobs_input")
+    prod_today = m2.number_input("Production Total", min_value=0, step=100, key="prod_input")
+    trials_today = m3.number_input("Trials Today", min_value=0, step=1, key="trials_input")
+    
+    c1, c2 = st.columns(2)
+    am_mins = c1.number_input("AM Clean (Mins)", value=45, key="am_clean")
+    pm_mins = c1.number_input("PM Clean (Mins)", value=45, key="pm_clean")
+    selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"], key="issues_input")
+    
     st.write("---")
-    if is_duplicate:
-        st.error(f"⚠️ An entry for {prod_date} already exists. Use the 'Edit/Delete' section below to modify it.")
+    st.subheader("♻️ Waste Material Tracking")
+    w_col1, w_col2, w_col3 = st.columns(3)
+    pbl_white = w_col1.number_input("PBL White Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key="pbl_white")
+    abl_white = w_col2.number_input("ABL White Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key="abl_white")
+    abl_silver = w_col3.number_input("ABL Silver Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key="abl_silver")
+    
+    gross_waste_total = pbl_white + abl_white + abl_silver
+    st.metric(label="📊 Gross Total Waste Material", value=f"{gross_waste_total:,.2f} kg")
+    
+    submitted = st.form_submit_button("Submit All Production & Waste Data", disabled=is_duplicate)
 
-    prev_ytd_prod, prev_ytd_jobs, prev_ytd_trials = calculate_ytd_metrics(prod_date, df_main)
+if submitted and not is_duplicate:
+    try:
+        entry = {col: 0.0 if col in NUMERIC_COLUMNS else "" for col in ALL_COLUMNS}
+        issues_to_save = selected_issues if selected_issues else ["NoIssue"]
+        issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
 
-    with st.form("main_form", clear_on_submit=True):
-        st.subheader("📝 New Daily Entry Details")
-        m1, m2, m3 = st.columns(3)
-        jobs_today = m1.number_input("Jobs Today", min_value=0, step=1, key=f"jobs_input_{v}")
-        prod_today = m2.number_input("Production Total", min_value=0, step=100, key=f"prod_input_{v}")
-        trials_today = m3.number_input("Trials Today", min_value=0, step=1, key=f"trials_input_{v}")
+        entry.update({
+            'ProductionDate': prod_date.strftime('%m/%d/%Y'),
+            'NoOfJobs': int(jobs_today), 
+            'NoOfTrials': int(trials_today),
+            'DailyProductionTotal': float(prod_today),
+            'YearlyProductionTotal': float(prev_ytd_prod + prod_today), 
+            'YTD_Jobs_Total': int(prev_ytd_jobs + jobs_today),
+            'CleanMachineAm': f"{am_mins} mins",
+            'CleanMachinePm': f"{pm_mins} mins",
+            'CleanMachineTotal': f"{am_mins + pm_mins} mins",
+            'IssueResolutionTotal': formatted_downtime,
+            'TempDate': prod_date.strftime('%Y-%m-%d'),
+            'PBL_White': float(pbl_white),
+            'ABL_White': float(abl_white),
+            'ABL_Silver': float(abl_silver),
+            'Gross_Waste': float(gross_waste_total),
+            prod_date.strftime('%A'): 1
+        })
+        entry.update(issue_dict)
+
+        new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
+        clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
+        save_df = pd.concat([clean_df, new_row_df], ignore_index=True)
         
-        c1, c2 = st.columns(2)
-        am_mins = c1.number_input("AM Clean (Mins)", value=45, key=f"am_clean_{v}")
-        pm_mins = c1.number_input("PM Clean (Mins)", value=45, key=f"pm_clean_{v}")
-        selected_issues = c2.multiselect("Production Issues:", options=ISSUE_CATEGORIES, default=["NoIssue"], key=f"issues_input_{v}")
+        for col in ALL_COLUMNS:
+            if col in NUMERIC_COLUMNS:
+                save_df[col] = pd.to_numeric(save_df[col], errors='coerce').fillna(0.0)
+            else:
+                save_df[col] = save_df[col].fillna("")
+
+        # Save to Google Sheets
+        conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=save_df)
         
-        st.write("---")
-        st.subheader("♻️ Waste Material Tracking")
-        w_col1, w_col2, w_col3 = st.columns(3)
-        pbl_white = w_col1.number_input("PBL White Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"pbl_white_{v}")
-        abl_white = w_col2.number_input("ABL White Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_white_{v}")
-        abl_silver = w_col3.number_input("ABL Silver Waste (kg)", min_value=0.0, step=0.1, format="%.2f", key=f"abl_silver_{v}")
+        # Reset downtime & cache status
+        st.session_state.accumulated_downtime = timedelta(0)
+        st.cache_data.clear()
         
-        gross_waste_total = pbl_white + abl_white + abl_silver
-        st.metric(label="📊 Gross Total Waste Material", value=f"{gross_waste_total:,.2f} kg")
-        
-        submitted = st.form_submit_button("Submit All Production & Waste Data", disabled=is_duplicate)
-
-    if submitted and not is_duplicate:
-        try:
-            entry = {col: 0.0 if col in NUMERIC_COLUMNS else "" for col in ALL_COLUMNS}
-            issues_to_save = selected_issues if selected_issues else ["NoIssue"]
-            issue_dict = {f'ProductionIssues_{i+1}': issues_to_save[i] if i < len(issues_to_save) else "NoIssue" for i in range(10)}
-
-            entry.update({
-                'ProductionDate': prod_date.strftime('%m/%d/%Y'),
-                'NoOfJobs': int(jobs_today), 
-                'NoOfTrials': int(trials_today),
-                'DailyProductionTotal': float(prod_today),
-                'YearlyProductionTotal': float(prev_ytd_prod + prod_today), 
-                'YTD_Jobs_Total': int(prev_ytd_jobs + jobs_today),
-                'CleanMachineAm': f"{am_mins} mins",
-                'CleanMachinePm': f"{pm_mins} mins",
-                'CleanMachineTotal': f"{am_mins + pm_mins} mins",
-                'IssueResolutionTotal': formatted_downtime,
-                'TempDate': prod_date.strftime('%Y-%m-%d'),
-                'PBL_White': float(pbl_white),
-                'ABL_White': float(abl_white),
-                'ABL_Silver': float(abl_silver),
-                'Gross_Waste': float(gross_waste_total),
-                prod_date.strftime('%A'): 1
-            })
-            entry.update(issue_dict)
-
-            new_row_df = pd.DataFrame([entry])[ALL_COLUMNS]
-            clean_df = df_main.drop(columns=['ProductionDate_Parsed'], errors='ignore')
-            save_df = pd.concat([clean_df, new_row_df], ignore_index=True)
-            
-            for col in ALL_COLUMNS:
-                if col in NUMERIC_COLUMNS:
-                    save_df[col] = pd.to_numeric(save_df[col], errors='coerce').fillna(0.0)
-                else:
-                    save_df[col] = save_df[col].fillna("")
-
-            conn.update(spreadsheet=SPREADSHEET_URL, worksheet=SHEET_NAME, data=save_df)
-            st.success("✅ Production and Waste Data saved successfully!")
-            st.session_state.form_version += 1
-            st.session_state.accumulated_downtime = timedelta(0) 
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Save Error: {e}")
-else:
-    st.info("🔒 **Data Entry & Timer Locked:** Please log in at the top of the page to record new entries.")
+        st.success("✅ Production and Waste Data saved successfully!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"❌ Save Error: {e}")
+    
 
 # --- 9. RECORD MANAGEMENT & TABLES ---
 st.write("---")
